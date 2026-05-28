@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh System Insights health snapshot periodically
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=10min
+AccuracySec=30s
+Persistent=true
+Unit=system-insights.service
+
+[Install]
+WantedBy=timers.target

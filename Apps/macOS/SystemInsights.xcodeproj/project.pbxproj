@@ -1,0 +1,582 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 63;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* SystemInsightsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* SystemInsightsApp.swift */; };
+		A10000000000000000000002 /* InsightViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* InsightViewModel.swift */; };
+		A10000000000000000000003 /* InsightMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* InsightMenuView.swift */; };
+		A10000000000000000000004 /* UpdaterController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* UpdaterController.swift */; };
+		A10000000000000000000005 /* WidgetConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000005 /* WidgetConfiguration.swift */; };
+		A10000000000000000000006 /* SystemInsightsWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000006 /* SystemInsightsWidget.swift */; };
+		A10000000000000000000007 /* WidgetConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000005 /* WidgetConfiguration.swift */; };
+		A10000000000000000000008 /* SystemInsightCore in Frameworks */ = {isa = PBXBuildFile; productRef = E10000000000000000000001 /* SystemInsightCore */; };
+		A10000000000000000000009 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = E10000000000000000000002 /* Sparkle */; };
+		A1000000000000000000000A /* SystemInsightCore in Frameworks */ = {isa = PBXBuildFile; productRef = E10000000000000000000003 /* SystemInsightCore */; };
+		A1000000000000000000000B /* System Insights Widget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* System Insights Widget.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		A1000000000000000000000C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* Assets.xcassets */; };
+		A1000000000000000000000D /* SystemInsightsDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000F /* SystemInsightsDashboardView.swift */; };
+		A1000000000000000000000E /* CacheSecurityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* CacheSecurityView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A20000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D10000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D20000000000000000000002;
+			remoteInfo = SystemInsightsWidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A30000000000000000000001 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A1000000000000000000000B /* System Insights Widget.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		1966A5B32FC55CB30018C21C /* SystemInsightsApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SystemInsightsApp.entitlements; sourceTree = "<group>"; };
+		B10000000000000000000001 /* SystemInsightsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemInsightsApp.swift; sourceTree = "<group>"; };
+		B10000000000000000000002 /* InsightViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightViewModel.swift; sourceTree = "<group>"; };
+		B10000000000000000000003 /* InsightMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightMenuView.swift; sourceTree = "<group>"; };
+		B10000000000000000000004 /* UpdaterController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdaterController.swift; sourceTree = "<group>"; };
+		B10000000000000000000005 /* WidgetConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetConfiguration.swift; sourceTree = "<group>"; };
+		B10000000000000000000006 /* SystemInsightsWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemInsightsWidget.swift; sourceTree = "<group>"; };
+		B10000000000000000000007 /* System Insights.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "System Insights.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000000000000000000008 /* System Insights Widget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "System Insights Widget.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000000000000000000009 /* App-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "App-Info.plist"; sourceTree = "<group>"; };
+		B1000000000000000000000A /* Widget-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Widget-Info.plist"; sourceTree = "<group>"; };
+		B1000000000000000000000B /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
+		B1000000000000000000000C /* Widget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Widget.entitlements; sourceTree = "<group>"; };
+		B1000000000000000000000D /* Widget-Debug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Widget-Debug.entitlements"; sourceTree = "<group>"; };
+		B1000000000000000000000E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B1000000000000000000000F /* SystemInsightsDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemInsightsDashboardView.swift; sourceTree = "<group>"; };
+		B10000000000000000000010 /* CacheSecurityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheSecurityView.swift; sourceTree = "<group>"; };
+		B10000000000000000000011 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		B10000000000000000000012 /* Signing.local.xcconfig.example */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Signing.local.xcconfig.example"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A40000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000008 /* SystemInsightCore in Frameworks */,
+				A10000000000000000000009 /* Sparkle in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A40000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000000000000000000000A /* SystemInsightCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		C10000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				C10000000000000000000002 /* SystemInsightsApp */,
+				C10000000000000000000003 /* SystemInsightsWidgetExtension */,
+				C10000000000000000000004 /* Shared */,
+				C10000000000000000000005 /* Configuration */,
+				B1000000000000000000000E /* Assets.xcassets */,
+				C10000000000000000000006 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		C10000000000000000000002 /* SystemInsightsApp */ = {
+			isa = PBXGroup;
+			children = (
+				1966A5B32FC55CB30018C21C /* SystemInsightsApp.entitlements */,
+				B10000000000000000000001 /* SystemInsightsApp.swift */,
+				B10000000000000000000002 /* InsightViewModel.swift */,
+				B10000000000000000000003 /* InsightMenuView.swift */,
+				B10000000000000000000004 /* UpdaterController.swift */,
+				B1000000000000000000000F /* SystemInsightsDashboardView.swift */,
+				B10000000000000000000010 /* CacheSecurityView.swift */,
+			);
+			path = SystemInsightsApp;
+			sourceTree = "<group>";
+		};
+		C10000000000000000000003 /* SystemInsightsWidgetExtension */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000006 /* SystemInsightsWidget.swift */,
+			);
+			path = SystemInsightsWidgetExtension;
+			sourceTree = "<group>";
+		};
+		C10000000000000000000004 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000005 /* WidgetConfiguration.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		C10000000000000000000005 /* Configuration */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000009 /* App-Info.plist */,
+				B1000000000000000000000A /* Widget-Info.plist */,
+				B1000000000000000000000B /* App.entitlements */,
+				B1000000000000000000000C /* Widget.entitlements */,
+				B1000000000000000000000D /* Widget-Debug.entitlements */,
+				B10000000000000000000011 /* Signing.xcconfig */,
+				B10000000000000000000012 /* Signing.local.xcconfig.example */,
+			);
+			path = Configuration;
+			sourceTree = "<group>";
+		};
+		C10000000000000000000006 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000007 /* System Insights.app */,
+				B10000000000000000000008 /* System Insights Widget.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		D20000000000000000000001 /* SystemInsightsApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F10000000000000000000002 /* Build configuration list for PBXNativeTarget "SystemInsightsApp" */;
+			buildPhases = (
+				A50000000000000000000001 /* Sources */,
+				A40000000000000000000001 /* Frameworks */,
+				A60000000000000000000001 /* Resources */,
+				A30000000000000000000001 /* Embed App Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A70000000000000000000001 /* PBXTargetDependency */,
+			);
+			name = SystemInsightsApp;
+			packageProductDependencies = (
+				E10000000000000000000001 /* SystemInsightCore */,
+				E10000000000000000000002 /* Sparkle */,
+			);
+			productName = "System Insights";
+			productReference = B10000000000000000000007 /* System Insights.app */;
+			productType = "com.apple.product-type.application";
+		};
+		D20000000000000000000002 /* SystemInsightsWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F10000000000000000000003 /* Build configuration list for PBXNativeTarget "SystemInsightsWidgetExtension" */;
+			buildPhases = (
+				A50000000000000000000002 /* Sources */,
+				A40000000000000000000002 /* Frameworks */,
+				A60000000000000000000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SystemInsightsWidgetExtension;
+			packageProductDependencies = (
+				E10000000000000000000003 /* SystemInsightCore */,
+			);
+			productName = "System Insights Widget";
+			productReference = B10000000000000000000008 /* System Insights Widget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D10000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2640;
+				LastUpgradeCheck = 2640;
+				TargetAttributes = {
+					D20000000000000000000001 = {
+						CreatedOnToolsVersion = 26.4;
+					};
+					D20000000000000000000002 = {
+						CreatedOnToolsVersion = 26.4;
+					};
+				};
+			};
+			buildConfigurationList = F10000000000000000000001 /* Build configuration list for PBXProject "SystemInsights" */;
+			compatibilityVersion = "Xcode 15.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = C10000000000000000000001;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				E20000000000000000000001 /* XCLocalSwiftPackageReference "SystemInsightCoreSPM" */,
+				E20000000000000000000002 /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
+			productRefGroup = C10000000000000000000006 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				D20000000000000000000001 /* SystemInsightsApp */,
+				D20000000000000000000002 /* SystemInsightsWidgetExtension */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A60000000000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000000000000000000000C /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A60000000000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A50000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000001 /* SystemInsightsApp.swift in Sources */,
+				A10000000000000000000002 /* InsightViewModel.swift in Sources */,
+				A10000000000000000000003 /* InsightMenuView.swift in Sources */,
+				A10000000000000000000004 /* UpdaterController.swift in Sources */,
+				A10000000000000000000005 /* WidgetConfiguration.swift in Sources */,
+				A1000000000000000000000D /* SystemInsightsDashboardView.swift in Sources */,
+				A1000000000000000000000E /* CacheSecurityView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A50000000000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000006 /* SystemInsightsWidget.swift in Sources */,
+				A10000000000000000000007 /* WidgetConfiguration.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A70000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D20000000000000000000002 /* SystemInsightsWidgetExtension */;
+			targetProxy = A20000000000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		F20000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = B10000000000000000000011 /* Signing.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		F20000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = B10000000000000000000011 /* Signing.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		F20000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Configuration/App.entitlements;
+				CURRENT_PROJECT_VERSION = 3;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Configuration/App-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.needletails.SystemInsights;
+				PRODUCT_NAME = "System Insights";
+				SPARKLE_FEED_URL = "https://github.com/needletails/SystemInsights/releases/latest/download/appcast.xml";
+				SPARKLE_PUBLIC_ED_KEY = CONFIGURE_WITH_SPARKLE_GENERATE_KEYS;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				SYSTEM_INSIGHTS_KEYCHAIN_ACCESS_GROUP = "$(AppIdentifierPrefix)com.needletails.SystemInsights";
+			};
+			name = Debug;
+		};
+		F20000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Configuration/App.entitlements;
+				CURRENT_PROJECT_VERSION = 3;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Configuration/App-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.needletails.SystemInsights;
+				PRODUCT_NAME = "System Insights";
+				SPARKLE_FEED_URL = "https://github.com/needletails/SystemInsights/releases/latest/download/appcast.xml";
+				SPARKLE_PUBLIC_ED_KEY = CONFIGURE_WITH_SPARKLE_GENERATE_KEYS;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				SYSTEM_INSIGHTS_KEYCHAIN_ACCESS_GROUP = "$(AppIdentifierPrefix)com.needletails.SystemInsights";
+			};
+			name = Release;
+		};
+		F20000000000000000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = Configuration/Widget.entitlements;
+				CURRENT_PROJECT_VERSION = 3;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Configuration/Widget-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../../../../Frameworks",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.needletails.SystemInsights.widget;
+				PRODUCT_NAME = "System Insights Widget";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				SYSTEM_INSIGHTS_KEYCHAIN_ACCESS_GROUP = "$(AppIdentifierPrefix)com.needletails.SystemInsights";
+			};
+			name = Debug;
+		};
+		F20000000000000000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = Configuration/Widget.entitlements;
+				CURRENT_PROJECT_VERSION = 3;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Configuration/Widget-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../../../../Frameworks",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.needletails.SystemInsights.widget;
+				PRODUCT_NAME = "System Insights Widget";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				SYSTEM_INSIGHTS_KEYCHAIN_ACCESS_GROUP = "$(AppIdentifierPrefix)com.needletails.SystemInsights";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		F10000000000000000000001 /* Build configuration list for PBXProject "SystemInsights" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F20000000000000000000001 /* Debug */,
+				F20000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F10000000000000000000002 /* Build configuration list for PBXNativeTarget "SystemInsightsApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F20000000000000000000003 /* Debug */,
+				F20000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F10000000000000000000003 /* Build configuration list for PBXNativeTarget "SystemInsightsWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F20000000000000000000005 /* Debug */,
+				F20000000000000000000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		E20000000000000000000001 /* XCLocalSwiftPackageReference "SystemInsightCoreSPM" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = SystemInsightCoreSPM;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		E20000000000000000000002 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.9.2;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		E10000000000000000000001 /* SystemInsightCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E20000000000000000000001 /* XCLocalSwiftPackageReference "SystemInsightCoreSPM" */;
+			productName = SystemInsightCore;
+		};
+		E10000000000000000000002 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E20000000000000000000002 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+		E10000000000000000000003 /* SystemInsightCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E20000000000000000000001 /* XCLocalSwiftPackageReference "SystemInsightCoreSPM" */;
+			productName = SystemInsightCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = D10000000000000000000001 /* Project object */;
+}

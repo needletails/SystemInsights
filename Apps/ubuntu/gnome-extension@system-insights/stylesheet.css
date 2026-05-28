@@ -1,0 +1,11 @@
+.system-insights-good {
+  color: #30d158;
+}
+
+.system-insights-warning {
+  color: #ff9f0a;
+}
+
+.system-insights-critical {
+  color: #ff453a;
+}

@@ -1,0 +1,8 @@
+{
+  "version": "0.0.0-dev",
+  "downloadURL": "https://github.com/needletails/SystemInsights/releases/latest",
+  "releaseNotes": "See GitHub Releases for changelog.",
+  "ubuntuAMD64DownloadURL": "https://github.com/needletails/SystemInsights/releases/latest/download/system-insights-ubuntu-amd64-vVERSION.tar.gz",
+  "ubuntuARM64DownloadURL": "https://github.com/needletails/SystemInsights/releases/latest/download/system-insights-ubuntu-arm64-vVERSION.tar.gz",
+  "macOSARM64DownloadURL": "https://github.com/needletails/SystemInsights/releases/latest/download/system-insights-macos-arm64-vVERSION.zip"
+}

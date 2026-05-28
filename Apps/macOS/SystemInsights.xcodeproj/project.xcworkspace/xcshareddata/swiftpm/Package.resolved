@@ -1,0 +1,51 @@
+{
+  "originHash" : "68114c256a90e91bed99dfe919c171bdf976ab59cc36654baaec910a3647e0e8",
+  "pins" : [
+    {
+      "identity" : "needletail-logger",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/needletails/needletail-logger.git",
+      "state" : {
+        "revision" : "01b258c3eb87edb0057f34d849d4486d9b1dc09b",
+        "version" : "3.1.4"
+      }
+    },
+    {
+      "identity" : "sparkle",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sparkle-project/Sparkle",
+      "state" : {
+        "revision" : "6276ba2b404829d139c45ff98427cf90e2efc59b",
+        "version" : "2.9.2"
+      }
+    },
+    {
+      "identity" : "swift-android-native",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/skiptools/swift-android-native.git",
+      "state" : {
+        "revision" : "7e6e833e6f163a2b75340f75c70b1d96ea6b8135",
+        "version" : "1.5.1"
+      }
+    },
+    {
+      "identity" : "swift-jni",
+      "kind" : "remoteSourceControl",
+      "location" : "https://source.skip.tools/swift-jni.git",
+      "state" : {
+        "revision" : "fe76ac21aca639976833b5ea3e875dc072519ac4",
+        "version" : "0.5.0"
+      }
+    },
+    {
+      "identity" : "swift-log",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-log.git",
+      "state" : {
+        "revision" : "7dc6101ae4dbe95cd3bc9cebad3b7cf8e49a7a63",
+        "version" : "1.13.0"
+      }
+    }
+  ],
+  "version" : 3
+}

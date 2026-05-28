@@ -1,0 +1,71 @@
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Internal maintainer documentation (release signing, secrets, ops — not published)
+docs/
+
+# Swift / Xcode
+.build/
+.scratch/
+.swiftpm/
+DerivedData/
+*.xcarchive
+*.dSYM
+*.xcuserstate
+**/*.xcuserstate
+**/xcuserdata/
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+*.app
+*.appex
+
+# Archives and local release artifacts
+*.zip
+*.tar.gz
+*.sha256
+dist/
+release/
+
+# Signing, secrets, and local configuration (never commit Team ID or keys)
+*.p12
+*.pem
+*.mobileprovision
+*.provisionprofile
+.env
+.env.*
+!.env.example
+secrets/
+local/
+Apps/macOS/Configuration/Signing.local.xcconfig
+**/Signing.local.xcconfig
+private-ed-key.txt
+*.p8
+AuthKey_*.p8
+SPARKLE_*.xml
+appcast.xml
+
+# Installed / runtime cache (never commit local telemetry)
+latest.json
+latest.snapshot
+.snapshot-key
+.snapshot-key-wrap
+.snapshot-session
+**/.local/share/system-insights/
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*~
+
+# Logs and temp
+*.log
+tmp/
+temp/
+
+# Coverage / profiling
+.coverage
+*.profraw

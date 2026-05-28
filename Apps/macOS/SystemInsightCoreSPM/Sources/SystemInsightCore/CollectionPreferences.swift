@@ -1,0 +1,1 @@
+../../../../../Sources/SystemInsightCore/CollectionPreferences.swift

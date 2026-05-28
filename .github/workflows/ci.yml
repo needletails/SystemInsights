@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify-safe-to-commit:
+    name: Verify safe to commit
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364e3007ec # v4.2.2
+      - name: Block secrets and maintainer-only paths
+        run: sh Scripts/verify-safe-to-commit.sh
+
+  swift-package:
+    name: Swift Package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, ubuntu-24.04, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364e3007ec # v4.2.2
+      - uses: swift-actions/setup-swift@54a328a56c9b1439aeb00e8fd446033a82dd0ca9 # v2.36.0
+        with:
+          swift-version: "6.1"
+      - run: swift test
+      - run: swift run system-insights collect --mock --output "$RUNNER_TEMP/latest.json"
+
+  macos-app:
+    name: macOS App and Widget
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364e3007ec # v4.2.2
+      - run: >-
+          xcodebuild
+          -project Apps/macOS/SystemInsights.xcodeproj
+          -scheme SystemInsights
+          -configuration Debug
+          -destination 'generic/platform=macOS'
+          CODE_SIGNING_ALLOWED=NO
+          build
+
+  macos-adwaita-app:
+    name: macOS Adwaita Dashboard
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364e3007ec # v4.2.2
+      - uses: swift-actions/setup-swift@54a328a56c9b1439aeb00e8fd446033a82dd0ca9 # v2.36.0
+        with:
+          swift-version: "6.1"
+      - name: Install Libadwaita build dependencies
+        run: brew install libadwaita pkgconf
+      - run: swift build --package-path Apps/ubuntu/SystemInsightsAdwaita -c release --product system-insights-ui
+
+  ubuntu-adwaita-app:
+    name: Ubuntu Adwaita App (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364e3007ec # v4.2.2
+      - uses: swift-actions/setup-swift@54a328a56c9b1439aeb00e8fd446033a82dd0ca9 # v2.36.0
+        with:
+          swift-version: "6.1"
+      - name: Install Libadwaita build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libadwaita-1-dev libgtk-4-dev pkg-config
+      - run: swift build --package-path Apps/ubuntu/SystemInsightsAdwaita -c release --product system-insights-ui
+
+  assets:
+    name: Validate Assets
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364e3007ec # v4.2.2
+      - run: jq empty Schema/insight-snapshot.schema.json
+      - run: jq empty Apps/ubuntu/gnome-extension@system-insights/metadata.json
+      - run: shellcheck Scripts/*.sh
+      - run: sh Scripts/check-release-config.sh

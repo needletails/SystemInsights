@@ -1,0 +1,15 @@
+[Unit]
+Description=Collect a System Insights health snapshot
+
+[Service]
+Type=oneshot
+# If password protection is enabled, add:
+# Environment=SYSTEM_INSIGHTS_CACHE_PASSWORD=your-password
+# or use EnvironmentFile=%h/.config/system-insights/cache-password.env (mode 0600).
+ExecStart=%h/.local/bin/system-insights collect --quiet --output %h/.local/share/system-insights/latest.snapshot
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/share/system-insights

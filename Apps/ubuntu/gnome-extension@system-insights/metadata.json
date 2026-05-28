@@ -1,0 +1,7 @@
+{
+  "uuid": "system-insights@needletails.com",
+  "name": "System Insights",
+  "description": "GNOME panel indicator for System Insights. Formatting and service hints come from the Swift CLI.",
+  "shell-version": ["45", "46", "47"],
+  "version": 2
+}

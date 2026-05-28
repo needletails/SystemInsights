@@ -1,0 +1,12 @@
+// Copy this file to Signing.local.xcconfig (same directory). Signing.local.xcconfig is gitignored.
+//
+// DEVELOPMENT_TEAM = ABCDE12345
+// CODE_SIGN_STYLE = Manual
+// CODE_SIGN_IDENTITY = Apple Development
+//
+// Optional: pick provisioning profiles in Xcode (Signing & Capabilities) instead of setting
+// PROVISIONING_PROFILE_SPECIFIER here.
+
+DEVELOPMENT_TEAM =
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = Apple Development

@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://needletails.com/system-insights/schema/insight-snapshot.schema.json",
+  "title": "InsightSnapshot",
+  "description": "Portable snapshot contract consumed by macOS WidgetKit and the GNOME Shell extension.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "host",
+    "metrics",
+    "networkActivity",
+    "securityFindings",
+    "securityEvents",
+    "issues",
+    "score",
+    "rating",
+    "recommendations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 3 },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "host": { "$ref": "#/$defs/host" },
+    "metrics": { "$ref": "#/$defs/metrics" },
+    "networkActivity": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/networkActivityEvent" }
+    },
+    "securityFindings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/securityFinding" }
+    },
+    "securityEvents": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/securityEvent" }
+    },
+    "issues": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/issue" }
+    },
+    "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "rating": { "enum": ["Good", "Warning", "Critical"] },
+    "recommendations": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "topIssue": {
+      "oneOf": [
+        { "$ref": "#/$defs/issue" },
+        { "type": "null" }
+      ]
+    }
+  },
+  "$defs": {
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hostName", "platform", "operatingSystem"],
+      "properties": {
+        "hostName": { "type": "string" },
+        "platform": { "type": "string" },
+        "operatingSystem": { "type": "string" }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cpuLoadPercent",
+        "memoryPressurePercent",
+        "diskUsagePercent",
+        "network",
+        "topProcesses"
+      ],
+      "properties": {
+        "cpuLoadPercent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "memoryPressurePercent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "diskUsagePercent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "network": { "$ref": "#/$defs/network" },
+        "topProcesses": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/process" }
+        }
+      }
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receivedBytesPerSecond",
+        "sentBytesPerSecond",
+        "activeTCPConnections",
+        "vpn"
+      ],
+      "properties": {
+        "interfaceName": { "type": ["string", "null"] },
+        "receivedBytesPerSecond": { "type": "number", "minimum": 0 },
+        "sentBytesPerSecond": { "type": "number", "minimum": 0 },
+        "latencyMilliseconds": { "type": ["number", "null"], "minimum": 0 },
+        "activeTCPConnections": { "type": "integer", "minimum": 0 },
+        "vpn": { "$ref": "#/$defs/vpn" }
+      }
+    },
+    "vpn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "activeInterfaces", "detail"],
+      "properties": {
+        "state": { "enum": ["Connected", "Tunnel Detected", "Not Detected", "Unavailable"] },
+        "serviceName": { "type": ["string", "null"] },
+        "activeInterfaces": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "detail": { "type": "string" }
+      }
+    },
+    "process": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pid", "name", "cpuPercent", "memoryPercent"],
+      "properties": {
+        "pid": { "type": "integer" },
+        "name": { "type": "string" },
+        "cpuPercent": { "type": "number", "minimum": 0 },
+        "memoryPercent": { "type": "number", "minimum": 0 }
+      }
+    },
+    "securityFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "detail", "severity"],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "detail": { "type": "string" },
+        "severity": { "enum": ["informational", "warning", "critical"] },
+        "recommendation": { "type": ["string", "null"] }
+      }
+    },
+    "networkActivityEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timestamp", "action", "processName", "pid", "localEndpoint"],
+      "properties": {
+        "timestamp": { "type": "string", "format": "date-time" },
+        "action": { "enum": ["SEEN", "OPEN", "CLOSE", "LISTEN", "UNLIST"] },
+        "transport": { "enum": ["TCP", "UDP"] },
+        "processName": { "type": "string" },
+        "pid": { "type": "integer" },
+        "localEndpoint": { "type": "string" },
+        "remoteEndpoint": { "type": ["string", "null"] }
+      }
+    },
+    "securityEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source", "message", "severity"],
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": ["string", "null"] },
+        "source": { "type": "string" },
+        "message": { "type": "string" },
+        "severity": { "enum": ["informational", "warning", "critical"] }
+      }
+    },
+    "issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "category", "title", "detail", "severity"],
+      "properties": {
+        "id": { "type": "string" },
+        "category": { "enum": ["performance", "security"] },
+        "title": { "type": "string" },
+        "detail": { "type": "string" },
+        "severity": { "enum": ["informational", "warning", "critical"] },
+        "recommendation": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

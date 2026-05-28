@@ -1,0 +1,147 @@
+//
+//  Clamp.swift
+//  Adwaita
+//
+//  Created by auto-generation on 04.02.26.
+//
+
+import CAdw
+import LevenshteinTransformations
+
+/// A widget constraining its child to a given size.
+/// 
+/// 
+/// 
+/// The `AdwClamp` widget constrains the size of the widget it contains to a
+/// given maximum size. It will constrain the width if it is horizontal, or the
+/// height if it is vertical. The expansion of the child from its minimum to its
+/// maximum size is eased out for a smooth transition.
+/// 
+/// If the child requires more than the requested maximum size, it will be
+/// allocated the minimum size it can fit in instead.
+/// 
+/// `AdwClamp` can scale with the text scale factor, use the
+/// ``unit(_:)`` property to enable that behavior.
+/// 
+/// See also: `ClampLayout`, `ClampScrollable`.
+/// 
+/// 
+public struct Clamp: AdwaitaWidget {
+
+    #if exposeGeneratedAppearUpdateFunctions
+    /// Additional update functions for type extensions.
+    public var updateFunctions: [(ViewStorage, WidgetData, Bool) -> Void] = []
+    /// Additional appear functions for type extensions.
+    public var appearFunctions: [(ViewStorage, WidgetData) -> Void] = []
+    #else
+    /// Additional update functions for type extensions.
+    var updateFunctions: [(ViewStorage, WidgetData, Bool) -> Void] = []
+    /// Additional appear functions for type extensions.
+    var appearFunctions: [(ViewStorage, WidgetData) -> Void] = []
+    #endif
+
+    /// The child widget of the `AdwClamp`.
+    var child: Body?
+    /// The maximum size allocated to the child.
+    /// 
+    /// It is the width if the clamp is horizontal, or the height if it is vertical.
+    var maximumSize: Int?
+    /// The size above which the child is clamped.
+    /// 
+    /// Starting from this size, the clamp will tighten its grip on the child,
+    /// slowly allocating less and less of the available size up to the maximum
+    /// allocated size. Below that threshold and below the maximum size, the child
+    /// will be allocated all the available size.
+    /// 
+    /// If the threshold is greater than the maximum size to allocate to the child,
+    /// the child will be allocated all the size up to the maximum.
+    /// If the threshold is lower than the minimum size to allocate to the child,
+    /// that size will be used as the tightening threshold.
+    /// 
+    /// Effectively, tightening the grip on the child before it reaches its maximum
+    /// size makes transitions to and from the maximum size smoother when resizing.
+    var tighteningThreshold: Int?
+
+    /// Initialize `Clamp`.
+    public init() {
+    }
+
+    /// The view storage.
+    /// - Parameters:
+    ///     - modifiers: Modify views before being updated.
+    ///     - type: The view render data type.
+    /// - Returns: The view storage.
+    public func container<Data>(data: WidgetData, type: Data.Type) -> ViewStorage where Data: ViewRenderData {
+        let storage = ViewStorage(adw_clamp_new()?.opaque())
+        for function in appearFunctions {
+            function(storage, data)
+        }
+        if let childStorage = child?.storage(data: data, type: type) {
+            storage.content["child"] = [childStorage]
+            adw_clamp_set_child(storage.opaquePointer, childStorage.opaquePointer?.cast())
+        }
+
+        return storage
+    }
+
+    /// Update the stored content.
+    /// - Parameters:
+    ///     - storage: The storage to update.
+    ///     - modifiers: Modify views before being updated
+    ///     - updateProperties: Whether to update the view's properties.
+    ///     - type: The view render data type.
+    public func update<Data>(_ storage: ViewStorage, data: WidgetData, updateProperties: Bool, type: Data.Type) where Data: ViewRenderData {
+        storage.modify { widget in
+
+            if let widget = storage.content["child"]?.first {
+                child?.updateStorage(widget, data: data, updateProperties: updateProperties, type: type)
+            }
+            if let maximumSize, updateProperties, (storage.previousState as? Self)?.maximumSize != maximumSize {
+                adw_clamp_set_maximum_size(widget, maximumSize.cInt)
+            }
+            if let tighteningThreshold, updateProperties, (storage.previousState as? Self)?.tighteningThreshold != tighteningThreshold {
+                adw_clamp_set_tightening_threshold(widget, tighteningThreshold.cInt)
+            }
+
+
+
+        }
+        for function in updateFunctions {
+            function(storage, data, updateProperties)
+        }
+        if updateProperties {
+            storage.previousState = self
+        }
+    }
+
+    /// The child widget of the `AdwClamp`.
+    public func child(@ViewBuilder _ child: () -> Body) -> Self {
+        modify { $0.child = child() }
+    }
+
+    /// The maximum size allocated to the child.
+    /// 
+    /// It is the width if the clamp is horizontal, or the height if it is vertical.
+    public func maximumSize(_ maximumSize: Int?) -> Self {
+        modify { $0.maximumSize = maximumSize }
+    }
+
+    /// The size above which the child is clamped.
+    /// 
+    /// Starting from this size, the clamp will tighten its grip on the child,
+    /// slowly allocating less and less of the available size up to the maximum
+    /// allocated size. Below that threshold and below the maximum size, the child
+    /// will be allocated all the available size.
+    /// 
+    /// If the threshold is greater than the maximum size to allocate to the child,
+    /// the child will be allocated all the size up to the maximum.
+    /// If the threshold is lower than the minimum size to allocate to the child,
+    /// that size will be used as the tightening threshold.
+    /// 
+    /// Effectively, tightening the grip on the child before it reaches its maximum
+    /// size makes transitions to and from the maximum size smoother when resizing.
+    public func tighteningThreshold(_ tighteningThreshold: Int?) -> Self {
+        modify { $0.tighteningThreshold = tighteningThreshold }
+    }
+
+}

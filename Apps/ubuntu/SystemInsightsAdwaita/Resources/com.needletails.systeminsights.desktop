@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=System Insights
+Comment=Performance and security health dashboard
+Exec=system-insights-ui
+Icon=com.needletails.systeminsights
+Terminal=false
+Type=Application
+Categories=System;Monitor;Utility;

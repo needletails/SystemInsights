@@ -1,0 +1,1 @@
+../../../../../Sources/SystemInsightCore/SecurityChecker.swift

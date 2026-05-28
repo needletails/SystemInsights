@@ -1,0 +1,9 @@
+// Optional local overrides (gitignored). Copy Signing.local.xcconfig.example first.
+#include? "Signing.local.xcconfig"
+
+// Public defaults: manual signing; set DEVELOPMENT_TEAM only in Signing.local.xcconfig.
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = -
+DEVELOPMENT_TEAM =
+
+SYSTEM_INSIGHTS_APP_GROUP = $(DEVELOPMENT_TEAM).com.needletails.SystemInsights.shared

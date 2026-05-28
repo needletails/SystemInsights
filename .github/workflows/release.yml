@@ -1,0 +1,199 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing GitHub Release tag to upload assets to, such as v0.2.0
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+
+jobs:
+  ubuntu:
+    name: Ubuntu ${{ matrix.arch }} Download
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364e3007ec # v4.2.2
+      - name: Validate release tag
+        run: test "${RELEASE_TAG#v}" != "$RELEASE_TAG"
+      - uses: swift-actions/setup-swift@54a328a56c9b1439aeb00e8fd446033a82dd0ca9 # v2.36.0
+        with:
+          swift-version: "6.1"
+      - name: Install Libadwaita build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libadwaita-1-dev libgtk-4-dev pkg-config
+      - name: Test and build release binaries
+        run: |
+          swift test -c release
+          swift build -c release --product system-insights
+          swift build --package-path Apps/ubuntu/SystemInsightsAdwaita -c release --product system-insights-ui
+      - name: Package Ubuntu files
+        run: |
+          PACKAGE="system-insights-ubuntu-${{ matrix.arch }}-${RELEASE_TAG}.tar.gz"
+          VERSION="${RELEASE_TAG#v}"
+          echo "$VERSION" > VERSION
+          sh Scripts/generate-release-json.sh "$RELEASE_TAG" "${{ github.repository }}"
+          mkdir -p release/system-insights/bin
+          mkdir -p release/system-insights/Schema
+          mkdir -p release/system-insights/Apps/ubuntu/SystemInsightsAdwaita/Resources
+          mkdir -p release/system-insights/Scripts
+          cp .build/release/system-insights release/system-insights/bin/
+          cp Apps/ubuntu/SystemInsightsAdwaita/.build/release/system-insights-ui release/system-insights/bin/
+          cp -R Apps/ubuntu/gnome-extension@system-insights release/system-insights/Apps/ubuntu/
+          cp -R Apps/ubuntu/systemd release/system-insights/Apps/ubuntu/
+          cp Apps/ubuntu/SystemInsightsAdwaita/Resources/com.needletails.systeminsights.desktop \
+            release/system-insights/Apps/ubuntu/SystemInsightsAdwaita/Resources/
+          cp -R Apps/ubuntu/SystemInsightsAdwaita/Resources/icons \
+            release/system-insights/Apps/ubuntu/SystemInsightsAdwaita/Resources/
+          cp -R Schema release/system-insights/
+          cp README.md release/system-insights/
+          cp VERSION release/system-insights/
+          cp Schema/release.json release/system-insights/Schema/
+          cp Scripts/install-ubuntu.sh Scripts/uninstall-ubuntu.sh release/system-insights/Scripts/
+          tar -C release -czf "$PACKAGE" system-insights
+          sha256sum "$PACKAGE" > "$PACKAGE.sha256"
+      - name: Attest Ubuntu archive provenance
+        uses: actions/attest-build-provenance@119b83262cb165ff385332483dde925047aad9d3 # v3.2.1
+        with:
+          subject-path: system-insights-ubuntu-${{ matrix.arch }}-${{ env.RELEASE_TAG }}.tar.gz
+      - name: Upload Ubuntu release files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release upload "$RELEASE_TAG"
+          "system-insights-ubuntu-${{ matrix.arch }}-${RELEASE_TAG}.tar.gz"
+          "system-insights-ubuntu-${{ matrix.arch }}-${RELEASE_TAG}.tar.gz.sha256"
+          Schema/release.json
+          --clobber
+
+  macos:
+    name: Signed macOS Apple Silicon Download
+    runs-on: macos-15
+    env:
+      BUILD_CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
+      P12_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+      KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+      DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
+      ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      ASC_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY_BASE64 }}
+      SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+      SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
+      SPARKLE_FEED_URL: ${{ secrets.SPARKLE_FEED_URL }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364e3007ec # v4.2.2
+      - name: Validate release tag and signing configuration
+        run: |
+          test "${RELEASE_TAG#v}" != "$RELEASE_TAG"
+          missing=""
+          for name in BUILD_CERTIFICATE_BASE64 P12_PASSWORD KEYCHAIN_PASSWORD DEVELOPMENT_TEAM \
+            ASC_KEY_ID ASC_ISSUER_ID ASC_PRIVATE_KEY SPARKLE_ED_PRIVATE_KEY SPARKLE_PUBLIC_ED_KEY SPARKLE_FEED_URL; do
+            eval "value=\${$name}"
+            if [ -z "$value" ]; then
+              missing="$missing $name"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            printf 'Missing GitHub secrets:%s\n' "$missing" >&2
+            printf 'Configure signing and Sparkle secrets on the repository (maintainer-only).\n' >&2
+            exit 1
+          fi
+          CI=true GITHUB_EVENT_NAME=${{ github.event_name }} sh Scripts/check-release-config.sh
+      - name: Install signing material
+        run: |
+          CERTIFICATE_PATH="$RUNNER_TEMP/developer-id.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o "$CERTIFICATE_PATH"
+          echo -n "$ASC_PRIVATE_KEY" | base64 --decode -o "$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          /usr/libexec/PlistBuddy -c "Set :teamID $DEVELOPMENT_TEAM" Scripts/ExportOptions.plist
+      - name: Archive and export arm64 Developer ID app
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          xcodebuild archive \
+            -project Apps/macOS/SystemInsights.xcodeproj \
+            -scheme SystemInsights \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            -archivePath "$RUNNER_TEMP/SystemInsights.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
+            DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
+            CODE_SIGN_STYLE=Automatic \
+            "CODE_SIGN_IDENTITY[sdk=macosx*]=Developer ID Application" \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
+            SPARKLE_PUBLIC_ED_KEY="$SPARKLE_PUBLIC_ED_KEY" \
+            SPARKLE_FEED_URL="$SPARKLE_FEED_URL"
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/SystemInsights.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -exportOptionsPlist Scripts/ExportOptions.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+          lipo -archs "$RUNNER_TEMP/export/System Insights.app/Contents/MacOS/System Insights" | grep -qx arm64
+      - name: Notarize and package
+        run: |
+          ditto -c -k --keepParent "$RUNNER_TEMP/export/System Insights.app" "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
+            --key "$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8" \
+            --key-id "$ASC_KEY_ID" \
+            --issuer "$ASC_ISSUER_ID" \
+            --wait
+          xcrun stapler staple "$RUNNER_TEMP/export/System Insights.app"
+          mkdir -p "$RUNNER_TEMP/updates"
+          ditto -c -k --keepParent "$RUNNER_TEMP/export/System Insights.app" \
+            "$RUNNER_TEMP/updates/system-insights-macos-arm64-${RELEASE_TAG}.zip"
+      - name: Generate Sparkle appcast and checksum
+        run: |
+          SPARKLE_APPCAST_TOOL="$(find "$RUNNER_TEMP/DerivedData/SourcePackages/artifacts" -type f -name generate_appcast -print -quit)"
+          test -x "$SPARKLE_APPCAST_TOOL"
+          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | "$SPARKLE_APPCAST_TOOL" \
+            --ed-key-file - \
+            --download-url-prefix "https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/" \
+            "$RUNNER_TEMP/updates"
+          cp "$RUNNER_TEMP/updates/system-insights-macos-arm64-${RELEASE_TAG}.zip" .
+          cp "$RUNNER_TEMP/updates/appcast.xml" .
+          shasum -a 256 "system-insights-macos-arm64-${RELEASE_TAG}.zip" \
+            > "system-insights-macos-arm64-${RELEASE_TAG}.zip.sha256"
+      - name: Attest macOS archive provenance
+        uses: actions/attest-build-provenance@119b83262cb165ff385332483dde925047aad9d3 # v3.2.1
+        with:
+          subject-path: system-insights-macos-arm64-${{ env.RELEASE_TAG }}.zip
+      - name: Upload macOS release files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release upload "$RELEASE_TAG"
+          "system-insights-macos-arm64-${RELEASE_TAG}.zip"
+          "system-insights-macos-arm64-${RELEASE_TAG}.zip.sha256"
+          appcast.xml
+          --clobber
