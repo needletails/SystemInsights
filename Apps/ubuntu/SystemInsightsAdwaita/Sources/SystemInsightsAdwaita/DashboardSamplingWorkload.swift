@@ -32,48 +32,34 @@ enum DashboardSamplingWorkload {
 
     nonisolated static func refreshSockets() async {
         await withSocketRefresh { context in
-            do {
-                let sample = try await DashboardSamplingPipeline.pollNetwork(
-                    preserving: context.baseline,
-                    establishedTCPCount: context.establishedCount
+            let connections = await DashboardSamplingPipeline.pollSockets()
+            let socketUpdate = await Task.detached {
+                DashboardSamplingPipeline.prepareSocketUIUpdate(
+                    connections: connections,
+                    previousFingerprint: context.fingerprint,
+                    previousConnections: context.previousConnections,
+                    recentActivity: context.recentActivity,
+                    force: context.force
                 )
+            }.value
+
+            if let socketUpdate {
                 await DashboardGTKBridge.runOnMain {
-                    DashboardViewModel.shared.applyLiveNetwork(sample.network)
+                    DashboardViewModel.shared.applyLiveSocketUpdate(socketUpdate)
                 }
-
-                let connections = sample.connections
-                let socketUpdate = await Task.detached {
-                    DashboardSamplingPipeline.prepareSocketUIUpdate(
-                        connections: connections,
-                        previousFingerprint: context.fingerprint,
-                        previousConnections: context.previousConnections,
-                        recentActivity: context.recentActivity,
-                        force: context.force
-                    )
-                }.value
-
-                if let socketUpdate {
-                    await DashboardGTKBridge.runOnMain {
-                        DashboardViewModel.shared.applyLiveSocketUpdate(socketUpdate)
-                    }
-                    DashboardCollectDiagnostics.log(
-                        "socket poll: \(socketUpdate.connections.count) sockets rx=\(Int(sample.network.receivedBytesPerSecond)) tx=\(Int(sample.network.sentBytesPerSecond))"
-                    )
-                } else if !connections.isEmpty {
-                    await DashboardGTKBridge.runOnMain {
-                        DashboardViewModel.shared.applyLiveSocketUpdate(
-                            DashboardSamplingPipeline.SocketUIUpdate(
-                                connections: connections,
-                                fingerprint: VisibleSocketSampling.fingerprint(connections),
-                                index: SocketConsoleFilter.buildIndex(connections: connections),
-                                recentActivity: context.recentActivity,
-                                previousConnections: Dictionary(uniqueKeysWithValues: connections.map { ($0.id, $0) })
-                            )
+                DashboardCollectDiagnostics.log("socket poll: \(socketUpdate.connections.count) sockets")
+            } else if !connections.isEmpty {
+                await DashboardGTKBridge.runOnMain {
+                    DashboardViewModel.shared.applyLiveSocketUpdate(
+                        DashboardSamplingPipeline.SocketUIUpdate(
+                            connections: connections,
+                            fingerprint: VisibleSocketSampling.fingerprint(connections),
+                            index: SocketConsoleFilter.buildIndex(connections: connections),
+                            recentActivity: context.recentActivity,
+                            previousConnections: Dictionary(uniqueKeysWithValues: connections.map { ($0.id, $0) })
                         )
-                    }
+                    )
                 }
-            } catch {
-                DashboardCollectDiagnostics.log("socket refresh failed: \(error)")
             }
         }
     }
@@ -155,8 +141,6 @@ enum DashboardSamplingWorkload {
 
 private extension DashboardSamplingWorkload {
     struct SocketRefreshContext: Sendable {
-        let baseline: NetworkMetrics
-        let establishedCount: Int
         let fingerprint: UInt64?
         let previousConnections: [String: VisibleSocket]?
         let recentActivity: [NetworkActivityEvent]
@@ -184,8 +168,6 @@ private extension DashboardSamplingWorkload {
             DashboardViewModel.shared.isRefreshingSockets = true
             let model = DashboardViewModel.shared
             let refresh = SocketRefreshContext(
-                baseline: model.liveNetwork ?? model.snapshot?.metrics.network ?? .unavailable,
-                establishedCount: model.visibleSockets.filter { $0.state == .established }.count,
                 fingerprint: model.lastSocketFingerprint,
                 previousConnections: model.previousConnections,
                 recentActivity: model.recentActivity,

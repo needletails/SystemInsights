@@ -90,8 +90,8 @@ final class DashboardViewModel {
             return true
         }
         guard let last = samples.last else { return true }
-        let ratesChanged = abs(last.receivedBytesPerSecond - network.receivedBytesPerSecond) >= 256
-            || abs(last.sentBytesPerSecond - network.sentBytesPerSecond) >= 256
+        let ratesChanged = abs(last.receivedBytesPerSecond - network.receivedBytesPerSecond) >= 64
+            || abs(last.sentBytesPerSecond - network.sentBytesPerSecond) >= 64
         let contextChanged = last.interfaceName != network.interfaceName
             || last.activeTCPConnections != network.activeTCPConnections
             || last.vpn != network.vpn

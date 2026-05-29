@@ -7,30 +7,14 @@ import SystemInsightCore
 actor DashboardSamplingScheduler {
     static let shared = DashboardSamplingScheduler()
 
-    private var liveNetworkTask: Task<Void, Never>?
-    private var socketTask: Task<Void, Never>?
+    private var monitoringTask: Task<Void, Never>?
     private var pathMonitoringTask: Task<Void, Never>?
-    private var telemetryTask: Task<Void, Never>?
-    private var snapshotTask: Task<Void, Never>?
-    private var initialRefreshTask: Task<Void, Never>?
     private var collectTask: Task<Void, Never>?
 
     func startMonitoring() {
         stopMonitoringTasks()
-        DashboardCollectDiagnostics.log("monitoring loops scheduled")
+        DashboardCollectDiagnostics.log("monitoring loop scheduled")
 
-        liveNetworkTask = intervalLoop(
-            label: "network",
-            every: .seconds(2),
-            canWork: DashboardSamplingGate.canPollLiveNetwork,
-            work: DashboardSamplingWorkload.refreshLiveNetwork
-        )
-        socketTask = intervalLoop(
-            label: "sockets",
-            every: .seconds(6),
-            canWork: DashboardSamplingGate.canPollSockets,
-            work: DashboardSamplingWorkload.refreshSockets
-        )
         #if os(macOS)
         pathMonitoringTask = Task {
             await NetworkSamplingService.shared.startPathMonitoring(
@@ -38,27 +22,41 @@ actor DashboardSamplingScheduler {
             )
         }
         #endif
-        telemetryTask = intervalLoop(
-            label: "telemetry",
-            every: .seconds(15),
-            canWork: DashboardSamplingGate.canPollTelemetry,
-            work: DashboardSamplingWorkload.refreshTelemetry
-        )
-        snapshotTask = intervalLoop(
-            label: "snapshot",
-            every: .seconds(10 * 60),
-            canWork: DashboardSamplingGate.canPollTelemetry,
-            work: DashboardSamplingWorkload.collectSnapshot
-        )
-        initialRefreshTask = Task.detached(priority: .utility) {
-            await DashboardSamplingWorkload.refreshLiveNetwork()
-            await DashboardSamplingWorkload.refreshSockets()
+
+        monitoringTask = Task.detached(priority: .utility) {
+            var tick = 0
+            while !Task.isCancelled {
+                guard await DashboardSamplingGate.canPollLiveNetwork() else {
+                    try? await Task.sleep(for: .milliseconds(400))
+                    continue
+                }
+                if tick == 0 {
+                    DashboardCollectDiagnostics.log("monitoring loop active")
+                }
+
+                await DashboardSamplingWorkload.refreshLiveNetwork()
+
+                if await DashboardSamplingGate.canPollSockets() {
+                    if tick.isMultiple(of: 3) {
+                        await DashboardSamplingWorkload.refreshSockets()
+                    }
+                    if tick.isMultiple(of: 15), tick > 0 {
+                        await DashboardSamplingWorkload.refreshTelemetry()
+                    }
+                    if tick.isMultiple(of: 300), tick > 0 {
+                        await DashboardSamplingScheduler.shared.requestPeriodicSnapshot()
+                    }
+                }
+
+                tick += 1
+                try? await Task.sleep(for: .seconds(2))
+            }
         }
     }
 
     func stopMonitoring() {
         stopMonitoringTasks()
-        DashboardCollectDiagnostics.log("monitoring loops stopped")
+        DashboardCollectDiagnostics.log("monitoring loop stopped")
     }
 
     func requestCollect() async {
@@ -87,53 +85,29 @@ actor DashboardSamplingScheduler {
         }
     }
 
+    private func requestPeriodicSnapshot() async {
+        guard collectTask == nil else { return }
+        let shouldStart = await DashboardGTKBridge.runOnMain {
+            DashboardViewModel.shared.cacheIsUnlockedForCollect() && !DashboardViewModel.shared.isCollecting
+        }
+        guard shouldStart else { return }
+        collectTask = Task.detached(priority: .utility) {
+            await DashboardSamplingWorkload.collectSnapshot()
+            await DashboardSamplingScheduler.shared.releaseCollect()
+        }
+    }
+
     private func releaseCollect() {
         collectTask = nil
     }
 
     private func stopMonitoringTasks() {
-        liveNetworkTask?.cancel()
-        socketTask?.cancel()
+        monitoringTask?.cancel()
         pathMonitoringTask?.cancel()
         pathMonitoringTask = nil
-        telemetryTask?.cancel()
-        snapshotTask?.cancel()
-        initialRefreshTask?.cancel()
-        liveNetworkTask = nil
-        socketTask = nil
-        telemetryTask = nil
-        snapshotTask = nil
-        initialRefreshTask = nil
+        monitoringTask = nil
         Task {
             await NetworkSamplingService.shared.stopPathMonitoring()
-        }
-    }
-
-    private func intervalLoop(
-        label: String,
-        every interval: Duration,
-        canWork: @escaping @Sendable () async -> Bool,
-        work: @escaping @Sendable () async -> Void
-    ) -> Task<Void, Never> {
-        Task.detached(priority: .utility) {
-            var ticks = 0
-            while !Task.isCancelled {
-                let allowed = await canWork()
-                guard allowed else {
-                    try? await Task.sleep(for: .milliseconds(400))
-                    continue
-                }
-                if ticks == 0 {
-                    DashboardCollectDiagnostics.log("monitoring loop active (\(label))")
-                }
-                ticks += 1
-                let startedAt = ContinuousClock.now
-                await work()
-                guard !Task.isCancelled else { return }
-                let elapsed = startedAt.duration(to: ContinuousClock.now)
-                let remainder = interval > elapsed ? interval - elapsed : .milliseconds(200)
-                try? await Task.sleep(for: remainder)
-            }
         }
     }
 }
@@ -154,9 +128,5 @@ enum DashboardSamplingGate {
                 && model.cacheIsUnlockedForCollect()
                 && !model.isCollecting
         }
-    }
-
-    nonisolated static func canPollTelemetry() async -> Bool {
-        await canPollSockets()
     }
 }

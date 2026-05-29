@@ -189,18 +189,17 @@ public struct SystemMetricCollector: MetricCollecting {
         )
         #elseif os(Linux)
         let interface = linuxDefaultInterface()
-        let first = interface.flatMap(linuxNetworkCounters)
+        let counters = interface.flatMap { linuxNetworkCounters(for: $0) }
         async let latency = InternetLatencyProbe.shared.sample(maxAge: .seconds(5))
-        let clock = ContinuousClock()
-        let startedAt = clock.now
-        try await Task.sleep(for: .milliseconds(250))
-        let elapsed = startedAt.duration(to: clock.now).components
-        let interval = max(Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18, 0.001)
-        let second = interface.flatMap(linuxNetworkCounters)
+        let rates = await LinuxNetworkRateTracker.shared.rates(
+            interface: interface,
+            received: counters?.received,
+            sent: counters?.sent
+        )
         return NetworkMetrics(
             interfaceName: interface,
-            receivedBytesPerSecond: byteRate(from: first?.received, to: second?.received, interval: interval),
-            sentBytesPerSecond: byteRate(from: first?.sent, to: second?.sent, interval: interval),
+            receivedBytesPerSecond: rates.received,
+            sentBytesPerSecond: rates.sent,
             latencyMilliseconds: await latency,
             activeTCPConnections: activeTCP,
             vpn: vpn
@@ -770,13 +769,20 @@ public struct SystemMetricCollector: MetricCollecting {
 
     private func linuxCollectVisibleSocketsUnified() -> [VisibleSocket] {
         var merged: [String: VisibleSocket] = [:]
+        let owners = linuxBuildSocketInodeOwnerMap()
 
         if LinuxSandboxAdaptation.isFlatpak {
-            for socket in linuxCollectVisibleSocketsViaProc() {
+            for socket in linuxCollectVisibleSocketsViaProc(owners: owners) {
                 merged[socket.id] = socket
             }
             if !merged.isEmpty {
-                Self.linuxLogSocketProbe("flatpak proc returned \(merged.count) sockets")
+                Self.linuxLogSocketProbe("flatpak proc returned \(merged.count) sockets (inode map=\(owners.count))")
+                return merged.values.sorted {
+                    if $0.transport != $1.transport { return $0.transport == .tcp }
+                    return $0.localEndpoint < $1.localEndpoint
+                }
+                .prefix(NetworkSamplingLimits.maxVisibleSockets)
+                .map { $0 }
             }
         }
 
@@ -793,8 +799,8 @@ public struct SystemMetricCollector: MetricCollecting {
             .map { $0 }
         }
 
-        let viaProc = linuxCollectVisibleSocketsViaProc()
-        Self.linuxLogSocketProbe("proc fallback returned \(viaProc.count) sockets")
+        let viaProc = linuxCollectVisibleSocketsViaProc(owners: owners)
+        Self.linuxLogSocketProbe("proc fallback returned \(viaProc.count) sockets (inode map=\(owners.count))")
         return viaProc
     }
 
@@ -847,7 +853,7 @@ public struct SystemMetricCollector: MetricCollecting {
         return parsed.isEmpty ? nil : parsed
     }
 
-    private func linuxCollectVisibleSocketsViaProc() -> [VisibleSocket] {
+    private func linuxCollectVisibleSocketsViaProc(owners: [UInt64: (pid: Int, processName: String)] = [:]) -> [VisibleSocket] {
         let tcp = LinuxSandboxAdaptation.procFileContents("net/tcp") ?? ""
         let tcp6 = LinuxSandboxAdaptation.procFileContents("net/tcp6") ?? ""
         let udp = LinuxSandboxAdaptation.procFileContents("net/udp") ?? ""
@@ -856,15 +862,64 @@ public struct SystemMetricCollector: MetricCollecting {
             tcpText: tcp,
             tcp6Text: tcp6,
             udpText: udp,
-            udp6Text: udp6
+            udp6Text: udp6,
+            owners: owners
         )
     }
 
     private func linuxCollectVisibleTCPViaProc() -> [VisibleSocket] {
+        let owners = linuxBuildSocketInodeOwnerMap()
         let tcp = LinuxSandboxAdaptation.procFileContents("net/tcp") ?? ""
         let tcp6 = LinuxSandboxAdaptation.procFileContents("net/tcp6") ?? ""
-        return Self.parseLinuxVisibleSocketsFromProc(tcpText: tcp, tcp6Text: tcp6, udpText: "", udp6Text: "")
-            .filter { $0.transport == .tcp }
+        return Self.parseLinuxVisibleSocketsFromProc(
+            tcpText: tcp,
+            tcp6Text: tcp6,
+            udpText: "",
+            udp6Text: "",
+            owners: owners
+        )
+        .filter { $0.transport == .tcp }
+    }
+
+    private func linuxBuildSocketInodeOwnerMap() -> [UInt64: (pid: Int, processName: String)] {
+        #if os(Linux)
+        // Building this map walks every process FD table; cache briefly to avoid hammering /proc.
+        // Synchronous access is OK here because visible socket collection already runs off the UI thread.
+        if let cached = LinuxSocketInodeCache.shared.cachedIfFresh() {
+            return cached
+        }
+        #endif
+
+        var map: [UInt64: (pid: Int, processName: String)] = [:]
+        let procRoot = LinuxSandboxAdaptation.procDirectory
+        guard let entries = try? FileManager.default.contentsOfDirectory(atPath: procRoot) else {
+            return map
+        }
+
+        for entry in entries {
+            guard let pid = Int(entry), pid > 0 else { continue }
+            let commPath = "\(procRoot)/\(pid)/comm"
+            let comm = ((try? String(contentsOfFile: commPath, encoding: .utf8))?
+                .trimmingCharacters(in: .whitespacesAndNewlines))
+                .flatMap { $0.isEmpty ? nil : $0 }
+            let processName = ExecutablePathResolver.path(forPID: pid) ?? comm ?? "unknown"
+            let fdRoot = "\(procRoot)/\(pid)/fd"
+            guard let fds = try? FileManager.default.contentsOfDirectory(atPath: fdRoot) else { continue }
+            for fd in fds {
+                guard let link = LinuxSandboxAdaptation.readProcSymlink("\(pid)/fd/\(fd)"),
+                      link.hasPrefix("socket:[") else {
+                    continue
+                }
+                let inodeText = link.dropFirst("socket:[".count).dropLast()
+                guard let inode = UInt64(inodeText) else { continue }
+                map[inode] = (pid, processName)
+            }
+        }
+
+        #if os(Linux)
+        LinuxSocketInodeCache.shared.store(map)
+        #endif
+        return map
     }
 
     private static func linuxLogSocketProbe(_ message: String) {
@@ -978,9 +1033,17 @@ public struct SystemMetricCollector: MetricCollecting {
         tcpText: String,
         tcp6Text: String,
         udpText: String,
-        udp6Text: String
+        udp6Text: String,
+        owners: [UInt64: (pid: Int, processName: String)] = [:]
     ) -> [VisibleSocket] {
         var connections: [String: VisibleSocket] = [:]
+
+        func ownership(for fields: [String]) -> (processName: String, pid: Int) {
+            guard fields.count > 9, let inode = UInt64(fields[9]), let owner = owners[inode] else {
+                return ("unattributed", 0)
+            }
+            return (owner.processName, owner.pid)
+        }
 
         func appendTCP(from text: String, ipv6: Bool) {
             for line in text.split(whereSeparator: \.isNewline).dropFirst().map(String.init) {
@@ -1000,9 +1063,10 @@ public struct SystemMetricCollector: MetricCollecting {
                 } else {
                     remoteEndpoint = nil
                 }
+                let owner = ownership(for: fields)
                 let connection = VisibleSocket(
-                    processName: "unattributed",
-                    pid: 0,
+                    processName: owner.processName,
+                    pid: owner.pid,
                     localEndpoint: local,
                     remoteEndpoint: remoteEndpoint,
                     state: state
@@ -1018,10 +1082,11 @@ public struct SystemMetricCollector: MetricCollecting {
                 guard let local = parseProcNetEndpoint(fields[1], ipv6: ipv6) else { continue }
                 let remote = parseProcNetEndpoint(fields[2], ipv6: ipv6)
                 let remoteEndpoint = remote.flatMap { isWildcardPeer($0) ? nil : $0 }
+                let owner = ownership(for: fields)
                 let socket = VisibleSocket(
                     transport: .udp,
-                    processName: "unattributed",
-                    pid: 0,
+                    processName: owner.processName,
+                    pid: owner.pid,
                     localEndpoint: local,
                     remoteEndpoint: remoteEndpoint,
                     state: .datagram
@@ -1102,6 +1167,95 @@ public struct SystemMetricCollector: MetricCollecting {
     }
 
 }
+
+#if os(Linux)
+private enum LinuxSocketInodeCache {
+    static let shared = LinuxSocketInodeCacheStorage()
+}
+
+private final class LinuxSocketInodeCacheStorage: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cached: [UInt64: (pid: Int, processName: String)]?
+    private var cachedAt = Date.distantPast
+    private let ttl: TimeInterval = 5
+
+    func cachedIfFresh() -> [UInt64: (pid: Int, processName: String)]? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let cached, Date().timeIntervalSince(cachedAt) < ttl else { return nil }
+        return cached
+    }
+
+    func store(_ map: [UInt64: (pid: Int, processName: String)]) {
+        lock.lock()
+        cached = map
+        cachedAt = Date()
+        lock.unlock()
+    }
+}
+
+private actor LinuxNetworkRateTracker {
+    static let shared = LinuxNetworkRateTracker()
+
+    private struct Sample {
+        var interface: String
+        var received: Double
+        var sent: Double
+        var sampledAt: ContinuousClock.Instant
+        var smoothedReceived: Double
+        var smoothedSent: Double
+    }
+
+    private var sample: Sample?
+
+    func rates(
+        interface: String?,
+        received: Double?,
+        sent: Double?
+    ) -> (received: Double, sent: Double) {
+        guard let interface, let received, let sent else { return (0, 0) }
+        let now = ContinuousClock.now
+
+        guard let prior = sample, prior.interface == interface else {
+            sample = Sample(
+                interface: interface,
+                received: received,
+                sent: sent,
+                sampledAt: now,
+                smoothedReceived: 0,
+                smoothedSent: 0
+            )
+            return (0, 0)
+        }
+
+        let interval = max(durationSeconds(from: prior.sampledAt, to: now), 0.5)
+        let rawReceived = byteRate(from: prior.received, to: received, interval: interval)
+        let rawSent = byteRate(from: prior.sent, to: sent, interval: interval)
+        let alpha = 0.35
+        let smoothedReceived = alpha * rawReceived + (1 - alpha) * prior.smoothedReceived
+        let smoothedSent = alpha * rawSent + (1 - alpha) * prior.smoothedSent
+        sample = Sample(
+            interface: interface,
+            received: received,
+            sent: sent,
+            sampledAt: now,
+            smoothedReceived: smoothedReceived,
+            smoothedSent: smoothedSent
+        )
+        return (smoothedReceived, smoothedSent)
+    }
+
+    private func durationSeconds(from start: ContinuousClock.Instant, to end: ContinuousClock.Instant) -> Double {
+        let elapsed = start.duration(to: end).components
+        return max(Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18, 0.001)
+    }
+
+    private func byteRate(from first: Double, to second: Double, interval: TimeInterval) -> Double {
+        guard second >= first else { return 0 }
+        return ((second - first) / interval).rounded()
+    }
+}
+#endif
 
 public struct MockMetricCollector: MetricCollecting {
     private let metrics: PerformanceMetrics
