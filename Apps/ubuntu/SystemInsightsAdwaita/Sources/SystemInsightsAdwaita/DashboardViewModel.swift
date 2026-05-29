@@ -7,6 +7,8 @@ final class DashboardViewModel {
     static let shared = DashboardViewModel()
 
     weak var renderState: DashboardRenderState?
+    /// Survives GTK recreating ``DashboardView``; do not store this on the view as ``@State``.
+    let uiGeneration = DashboardRenderState()
 
     private(set) var didBootstrap = false
     private(set) var snapshot: InsightSnapshot?
@@ -46,7 +48,54 @@ final class DashboardViewModel {
     }
 
     private func notifyUI() {
+        uiGeneration.bump()
         renderState?.bump()
+    }
+
+    private var lastGraphSampleAt: Date?
+
+    func applyLiveNetwork(_ network: NetworkMetrics) {
+        var samples = liveNetworkSamples
+        if shouldAppendLiveNetworkSample(network, samples: samples) {
+            samples.append(network)
+            lastGraphSampleAt = Date()
+            if samples.count > NetworkSamplingLimits.maxLiveNetworkSamples {
+                samples.removeFirst(samples.count - NetworkSamplingLimits.maxLiveNetworkSamples)
+            }
+        }
+        liveNetwork = network
+        liveNetworkSamples = samples
+        notifyUI()
+    }
+
+    private func shouldAppendLiveNetworkSample(_ network: NetworkMetrics, samples: [NetworkMetrics]) -> Bool {
+        let now = Date()
+        if let lastGraphSampleAt, now.timeIntervalSince(lastGraphSampleAt) >= 2 {
+            return true
+        }
+        guard let last = samples.last else { return true }
+        let ratesChanged = abs(last.receivedBytesPerSecond - network.receivedBytesPerSecond) >= 256
+            || abs(last.sentBytesPerSecond - network.sentBytesPerSecond) >= 256
+        let contextChanged = last.interfaceName != network.interfaceName
+            || last.activeTCPConnections != network.activeTCPConnections
+            || last.vpn != network.vpn
+            || last.latencyMilliseconds != network.latencyMilliseconds
+        return ratesChanged || contextChanged
+    }
+
+    func clearDashboardData() {
+        snapshot = nil
+        recentActivity = []
+        liveNetwork = nil
+        liveNetworkSamples = []
+        visibleSockets = []
+        socketSearchIndex = []
+        lastSocketSampleAt = nil
+        lastSocketFingerprint = nil
+        previousConnections = nil
+        lastGraphSampleAt = nil
+        isCollecting = false
+        notifyUI()
     }
 
     func applySnapshot(_ loaded: InsightSnapshot) {
@@ -249,12 +298,6 @@ final class DashboardViewModel {
         socketSearchIndex = update.index
         recentActivity = update.recentActivity
         lastSocketSampleAt = Date()
-        notifyUI()
-    }
-
-    func applyLiveNetwork(_ network: NetworkMetrics, samples: [NetworkMetrics]) {
-        liveNetwork = network
-        liveNetworkSamples = samples
         notifyUI()
     }
 

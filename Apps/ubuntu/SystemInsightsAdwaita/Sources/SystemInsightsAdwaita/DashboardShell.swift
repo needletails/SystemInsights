@@ -10,33 +10,20 @@ import Crypto
 
 @MainActor
 struct DashboardView: @preconcurrency View {
-    @State private var renderState = DashboardRenderState()
-    @State private var snapshot: InsightSnapshot?
     private var model: DashboardViewModel { .shared }
 
     @State private var security: DashboardSecurityState
     @State private var screen: DashboardScreen
     @State private var securityActionInFlight = false
     @State private var preferencesVisible = false
-    @State private var showStatusBanner = false
     @State private var inspectorVisible = false
     @State private var selectedRecord: NetworkRecordSelection?
 
-    @State private var recentActivity: [NetworkActivityEvent] = []
-    @State private var liveNetwork: NetworkMetrics?
-    @State private var liveNetworkSamples: [NetworkMetrics] = []
-    @State private var visibleSockets: [VisibleSocket] = []
-    @State private var socketSearchIndex: [SocketConsoleFilter.IndexEntry] = []
-    @State private var lastSocketSampleAt: Date?
-    @State private var lastSocketFingerprint: UInt64?
     @State private var announcedSocketLogPath = false
-    @State private var statusMessage = ""
     @State private var isRefreshingTelemetry = false
     @State private var isRefreshingLiveNetwork = false
     @State private var isRefreshingSockets = false
-    @State private var lastGraphSampleAt: Date?
     @State private var isMonitoring = false
-    @State private var previousConnections: [String: VisibleSocket]?
     @State private var backgroundWork = DashboardBackgroundCoordinator()
     /// Session key stashed when the user voluntarily locks so Cancel can restore the dashboard.
     @State private var voluntaryLockUndoKey: SymmetricKey?
@@ -48,36 +35,13 @@ struct DashboardView: @preconcurrency View {
         let initialSecurity = DashboardSecurityState()
         _security = State(wrappedValue: initialSecurity)
         _screen = State(wrappedValue: DashboardScreen.from(security: initialSecurity))
-        #if os(Linux)
-        DashboardCollectDiagnostics.log(
-            "dashboard init screen=\(DashboardScreen.from(security: initialSecurity))"
-        )
-        #endif
     }
 
     var view: Body {
-        let _ = {
-            model.bind(renderState: renderState)
-            syncViewStateFromModel()
-            return renderState.generation
-        }()
+        let _ = model.uiGeneration.generation
         OperationsRoot(onFirstAppear: performLaunchBootstrap) {
             screenContent
         }
-    }
-
-    private func syncViewStateFromModel() {
-        snapshot = model.snapshot
-        statusMessage = model.statusMessage
-        showStatusBanner = model.showStatusBanner
-        recentActivity = model.recentActivity
-        liveNetwork = model.liveNetwork
-        liveNetworkSamples = model.liveNetworkSamples
-        visibleSockets = model.visibleSockets
-        socketSearchIndex = model.socketSearchIndex
-        lastSocketSampleAt = model.lastSocketSampleAt
-        previousConnections = model.previousConnections
-        lastSocketFingerprint = model.lastSocketFingerprint
     }
 
     @ViewBuilder
@@ -93,14 +57,11 @@ struct DashboardView: @preconcurrency View {
     }
 
     private func performLaunchBootstrap() {
-        model.bind(renderState: renderState)
         model.registerDelayedBootstrap(performLaunchBootstrap)
         model.onCollectComplete = {
-            syncViewStateFromModel()
             startMonitoring()
         }
         model.performLaunchBootstrap(security: &security, screen: &screen)
-        syncViewStateFromModel()
         if model.snapshot != nil, !isMonitoring {
             startMonitoring()
         }
@@ -184,7 +145,7 @@ struct DashboardView: @preconcurrency View {
             }
             .headerBarTitle {
                 WindowTitle(
-                    subtitle: snapshot.map { "\($0.score)/100 · \($0.host.hostName)" } ?? "Ready to collect",
+                    subtitle: model.snapshot.map { "\($0.score)/100 · \($0.host.hostName)" } ?? "Ready to collect",
                     title: "Network Operations"
                 )
             }
@@ -235,21 +196,15 @@ struct DashboardView: @preconcurrency View {
 
     @ViewBuilder
     private var dashboardMainContent: Body {
-        if let snapshot = model.snapshot ?? snapshot {
-            let network = model.liveNetwork ?? liveNetwork ?? snapshot.metrics.network
-            let speedSamples = model.liveNetworkSamples.isEmpty
-                ? (liveNetworkSamples.isEmpty ? [network] : liveNetworkSamples)
-                : model.liveNetworkSamples
-            let sockets = model.visibleSockets.isEmpty ? visibleSockets : model.visibleSockets
-            let socketIndex = model.socketSearchIndex.isEmpty ? socketSearchIndex : model.socketSearchIndex
-            let activity = model.recentActivity.isEmpty ? recentActivity : model.recentActivity
-            let socketSampleAt = model.lastSocketSampleAt ?? lastSocketSampleAt
+        if let snapshot = model.snapshot {
+            let network = model.liveNetwork ?? snapshot.metrics.network
+            let speedSamples = model.liveNetworkSamples.isEmpty ? [network] : model.liveNetworkSamples
             ScrollView {
                 VStack {
                     releaseUpdateBanner
-                    if showStatusBanner || model.showStatusBanner, !(model.statusMessage.isEmpty && statusMessage.isEmpty) {
+                    if model.showStatusBanner, !model.statusMessage.isEmpty {
                         DashboardStatusBanner(
-                            message: model.statusMessage.isEmpty ? statusMessage : model.statusMessage,
+                            message: model.statusMessage,
                             visible: true,
                             onDismiss: dismissStatus
                         )
@@ -258,10 +213,10 @@ struct DashboardView: @preconcurrency View {
                         snapshot: snapshot,
                         network: network,
                         speedSamples: speedSamples,
-                        visibleSockets: sockets,
-                        socketSearchIndex: socketIndex,
-                        recentActivity: activity,
-                        lastSocketSampleAt: socketSampleAt,
+                        visibleSockets: model.visibleSockets,
+                        socketSearchIndex: model.socketSearchIndex,
+                        recentActivity: model.recentActivity,
+                        lastSocketSampleAt: model.lastSocketSampleAt,
                         isCollecting: model.isCollecting,
                         onScan: collectSnapshot,
                         onSelectSocket: { presentInspector(.socket($0)) },
@@ -279,15 +234,15 @@ struct DashboardView: @preconcurrency View {
             ScrollView {
                 VStack {
                     releaseUpdateBanner
-                    if showStatusBanner, !statusMessage.isEmpty {
+                    if model.showStatusBanner, !model.statusMessage.isEmpty {
                         DashboardStatusBanner(
-                            message: statusMessage,
+                            message: model.statusMessage,
                             visible: true,
                             onDismiss: dismissStatus
                         )
                     }
-                    let network = liveNetwork ?? .unavailable
-                    let speedSamples = liveNetworkSamples.isEmpty ? [network] : liveNetworkSamples
+                    let network = model.liveNetwork ?? .unavailable
+                    let speedSamples = model.liveNetworkSamples.isEmpty ? [network] : model.liveNetworkSamples
                     LiveTrafficPanel(network: network, speedSamples: speedSamples)
                         .style("operations-traffic-panel")
                         .frame(minWidth: DashboardWindowLayout.contentMinWidth)
@@ -301,7 +256,7 @@ struct DashboardView: @preconcurrency View {
                             label: "Latency",
                             value: DashboardFormatting.latency(network.latencyMilliseconds)
                         )
-                        DashboardDetailRow(label: "Poll", value: DashboardFormatting.pollText(lastSocketSampleAt))
+                        DashboardDetailRow(label: "Poll", value: DashboardFormatting.pollText(model.lastSocketSampleAt))
                     }
                     .style("operations-empty-connectivity")
                     Text("No policy snapshot yet")
@@ -327,8 +282,8 @@ struct DashboardView: @preconcurrency View {
 
     private var inspectorContext: SocketInspectorContext {
         SocketInspectorContext(
-            observedAt: lastSocketSampleAt,
-            network: liveNetwork ?? snapshot?.metrics.network
+            observedAt: model.lastSocketSampleAt,
+            network: model.liveNetwork ?? model.snapshot?.metrics.network
         )
     }
 
@@ -473,31 +428,26 @@ struct DashboardView: @preconcurrency View {
         DashboardCollectDiagnostics.log("bootstrap after unlock")
         reloadCachedSnapshot()
         startMonitoring()
-        if snapshot == nil {
-            postStatus("No cached snapshot on disk. Collecting a fresh snapshot…")
-            showStatusBanner = true
+        if model.snapshot == nil {
+            model.statusMessage = "No cached snapshot on disk. Collecting a fresh snapshot…"
+            model.showStatusBanner = true
+            model.uiGeneration.bump()
         }
         Task { await checkForReleaseUpdate() }
     }
 
     private func resetAfterLock() {
         backgroundWork.stop()
-        snapshot = nil
-        recentActivity = []
-        liveNetwork = nil
-        liveNetworkSamples = []
-        visibleSockets = []
-        socketSearchIndex = []
-        lastSocketSampleAt = nil
-        lastSocketFingerprint = nil
-        lastGraphSampleAt = nil
+        model.clearDashboardData()
         isMonitoring = false
         var next = security
         next.refresh()
         security = next
         screen = .unlock
         unlockAllowsCancel = voluntaryLockUndoKey != nil
-        postStatus("Cache locked. Enter your password to continue.")
+        model.statusMessage = "Cache locked. Enter your password to continue."
+        model.showStatusBanner = true
+        model.uiGeneration.bump()
     }
 
     private func reloadCachedSnapshot() {
@@ -505,23 +455,23 @@ struct DashboardView: @preconcurrency View {
         do {
             let loaded = try DashboardCacheLocations.readSnapshot()
             model.applySnapshot(loaded)
-            snapshot = loaded
-            recentActivity = Array(loaded.networkActivity.prefix(NetworkSamplingLimits.maxActivityEvents))
-            liveNetwork = loaded.metrics.network
-            liveNetworkSamples = [loaded.metrics.network]
-            postStatus("Loaded the latest cached snapshot.")
-            showStatusBanner = true
+            model.statusMessage = "Loaded the latest cached snapshot."
+            model.showStatusBanner = true
+            model.uiGeneration.bump()
         } catch SnapshotCacheLockError.locked {
             CacheSecurityCoordinator.lock()
             reconcileSecurityWithScreen(bootstrapIfUnlocked: false)
-            postStatus("Cache is locked. Enter your password to decrypt stored data.")
-            showStatusBanner = true
+            model.statusMessage = "Cache is locked. Enter your password to decrypt stored data."
+            model.showStatusBanner = true
+            model.uiGeneration.bump()
         } catch CocoaError.fileReadNoSuchFile {
-            postStatus("No encrypted snapshot found yet. Collecting a fresh snapshot…")
-            showStatusBanner = true
+            model.statusMessage = "No encrypted snapshot found yet. Collecting a fresh snapshot…"
+            model.showStatusBanner = true
+            model.uiGeneration.bump()
         } catch {
-            postStatus("Unable to read cache: \(error.localizedDescription)")
-            showStatusBanner = true
+            model.statusMessage = "Unable to read cache: \(error.localizedDescription)"
+            model.showStatusBanner = true
+            model.uiGeneration.bump()
         }
     }
 
@@ -532,7 +482,7 @@ struct DashboardView: @preconcurrency View {
     private func startMonitoring() {
         guard security.isUnlocked else { return }
         isMonitoring = true
-        if model.snapshot == nil, snapshot == nil {
+        if model.snapshot == nil {
             model.startCollect()
         }
 
@@ -546,14 +496,14 @@ struct DashboardView: @preconcurrency View {
     }
 
     private func refreshTelemetryAsync() async {
-        guard security.isUnlocked, !isRefreshingTelemetry, let currentSnapshot = model.snapshot ?? snapshot else {
+        guard security.isUnlocked, !isRefreshingTelemetry, let currentSnapshot = model.snapshot else {
             return
         }
         isRefreshingTelemetry = true
         defer { isRefreshingTelemetry = false }
 
         do {
-            let activitySnapshot = model.recentActivity.isEmpty ? recentActivity : model.recentActivity
+            let activitySnapshot = await UIViewDeferral.readOnMain { model.recentActivity }
             let refreshedSnapshot = try await Task.detached {
                 let refreshedMetrics = try await NetworkSamplingService.shared.collectMetrics()
                 return DashboardSamplingPipeline.buildTelemetrySnapshot(
@@ -562,9 +512,15 @@ struct DashboardView: @preconcurrency View {
                     recentActivity: activitySnapshot
                 )
             }.value
-            applyTelemetrySnapshot(refreshedSnapshot)
+            await UIViewDeferral.readOnMain {
+                model.applyTelemetrySnapshot(refreshedSnapshot)
+            }
         } catch {
-            postStatus("Telemetry refresh failed: \(error.localizedDescription)")
+            await UIViewDeferral.readOnMain {
+                model.statusMessage = "Telemetry refresh failed: \(error.localizedDescription)"
+                model.showStatusBanner = true
+                model.uiGeneration.bump()
+            }
         }
     }
 
@@ -574,20 +530,25 @@ struct DashboardView: @preconcurrency View {
         defer { isRefreshingLiveNetwork = false }
 
         let baseline = await UIViewDeferral.readOnMain {
-            (model.liveNetwork ?? liveNetwork ?? model.snapshot?.metrics.network ?? snapshot?.metrics.network) ?? .unavailable
+            model.liveNetwork ?? model.snapshot?.metrics.network ?? .unavailable
         }
         let establishedCount = await UIViewDeferral.readOnMain {
-            let sockets = model.visibleSockets.isEmpty ? visibleSockets : model.visibleSockets
-            return sockets.filter { $0.state == .established }.count
+            model.visibleSockets.filter { $0.state == .established }.count
         }
         do {
             let network = try await DashboardSamplingPipeline.pollLiveNetwork(
                 preserving: baseline,
                 establishedTCPCount: establishedCount
             )
-            applyNetworkSample(network)
+            await UIViewDeferral.readOnMain {
+                model.applyLiveNetwork(network)
+            }
         } catch {
-            postStatus("Network refresh failed: \(error.localizedDescription)")
+            await UIViewDeferral.readOnMain {
+                model.statusMessage = "Network refresh failed: \(error.localizedDescription)"
+                model.showStatusBanner = true
+                model.uiGeneration.bump()
+            }
         }
     }
 
@@ -597,29 +558,23 @@ struct DashboardView: @preconcurrency View {
         defer { isRefreshingSockets = false }
 
         let baseline = await UIViewDeferral.readOnMain {
-            (model.liveNetwork ?? liveNetwork ?? model.snapshot?.metrics.network ?? snapshot?.metrics.network) ?? .unavailable
+            model.liveNetwork ?? model.snapshot?.metrics.network ?? .unavailable
         }
         let establishedCount = await UIViewDeferral.readOnMain {
-            let sockets = model.visibleSockets.isEmpty ? visibleSockets : model.visibleSockets
-            return sockets.filter { $0.state == .established }.count
+            model.visibleSockets.filter { $0.state == .established }.count
         }
         do {
             let sample = try await DashboardSamplingPipeline.pollNetwork(
                 preserving: baseline,
                 establishedTCPCount: establishedCount
             )
-            applyNetworkSample(sample.network)
-            lastSocketSampleAt = Date()
+            await UIViewDeferral.readOnMain {
+                model.applyLiveNetwork(sample.network)
+            }
 
-            let fingerprintSnapshot = await UIViewDeferral.readOnMain {
-                model.lastSocketFingerprint ?? lastSocketFingerprint
-            }
-            let previousConnectionsSnapshot = await UIViewDeferral.readOnMain {
-                model.previousConnections ?? previousConnections
-            }
-            let activitySnapshot = await UIViewDeferral.readOnMain {
-                model.recentActivity.isEmpty ? recentActivity : model.recentActivity
-            }
+            let fingerprintSnapshot = await UIViewDeferral.readOnMain { model.lastSocketFingerprint }
+            let previousConnectionsSnapshot = await UIViewDeferral.readOnMain { model.previousConnections }
+            let activitySnapshot = await UIViewDeferral.readOnMain { model.recentActivity }
             let socketUpdate = await Task.detached {
                 DashboardSamplingPipeline.prepareSocketUIUpdate(
                     connections: sample.connections,
@@ -629,18 +584,21 @@ struct DashboardView: @preconcurrency View {
                 )
             }.value
             if let socketUpdate {
-                applySocketUIUpdate(socketUpdate, source: "socket-poll")
+                await UIViewDeferral.readOnMain {
+                    applySocketUIUpdate(socketUpdate, source: "socket-poll")
+                }
             }
         } catch {
-            postStatus("Socket refresh failed: \(error.localizedDescription)")
+            await UIViewDeferral.readOnMain {
+                model.statusMessage = "Socket refresh failed: \(error.localizedDescription)"
+                model.showStatusBanner = true
+                model.uiGeneration.bump()
+            }
         }
     }
 
     private func applyTelemetrySnapshot(_ refreshedSnapshot: InsightSnapshot) {
-        UIViewDeferral.run {
-            model.applyTelemetrySnapshot(refreshedSnapshot)
-            syncViewStateFromModel()
-        }
+        model.applyTelemetrySnapshot(refreshedSnapshot)
     }
 
     private func applySocketUIUpdate(_ update: DashboardSamplingPipeline.SocketUIUpdate, source: String) {
@@ -649,7 +607,6 @@ struct DashboardView: @preconcurrency View {
         let fingerprint = update.fingerprint
         let index = update.index
         let activity = update.recentActivity
-        let previous = update.previousConnections
         Task.detached {
             SocketConsoleDiagnostics.logRefresh(
                 source: source,
@@ -659,67 +616,33 @@ struct DashboardView: @preconcurrency View {
             )
         }
         UIViewDeferral.run {
-            model.applyLiveSocketUpdate(
-                DashboardSamplingPipeline.SocketUIUpdate(
-                    connections: connections,
-                    fingerprint: fingerprint,
-                    index: index,
-                    recentActivity: activity,
-                    previousConnections: previous
-                )
-            )
-            syncViewStateFromModel()
+            model.applyLiveSocketUpdate(update)
         }
     }
 
     private func announceSocketLogIfNeeded() {
         guard SocketConsoleDiagnostics.isEnabled, !announcedSocketLogPath else { return }
         announcedSocketLogPath = true
-        postStatus("Socket debug log: \(SocketConsoleDiagnostics.logFileURL.path)")
-        showStatusBanner = true
-    }
-
-    private func applyNetworkSample(_ network: NetworkMetrics) {
-        UIViewDeferral.run {
-            var samples = model.liveNetworkSamples.isEmpty ? liveNetworkSamples : model.liveNetworkSamples
-            if shouldAppendLiveNetworkSample(network, samples: samples) {
-                samples.append(network)
-                lastGraphSampleAt = Date()
-                if samples.count > NetworkSamplingLimits.maxLiveNetworkSamples {
-                    samples.removeFirst(samples.count - NetworkSamplingLimits.maxLiveNetworkSamples)
-                }
-            }
-            model.applyLiveNetwork(network, samples: samples)
-            syncViewStateFromModel()
-        }
-    }
-
-    private func shouldAppendLiveNetworkSample(_ network: NetworkMetrics, samples: [NetworkMetrics]) -> Bool {
-        let now = Date()
-        if let lastGraphSampleAt, now.timeIntervalSince(lastGraphSampleAt) >= 2 {
-            return true
-        }
-        guard let last = samples.last else { return true }
-        let ratesChanged = abs(last.receivedBytesPerSecond - network.receivedBytesPerSecond) >= 256
-            || abs(last.sentBytesPerSecond - network.sentBytesPerSecond) >= 256
-        let contextChanged = last.interfaceName != network.interfaceName
-            || last.activeTCPConnections != network.activeTCPConnections
-            || last.vpn != network.vpn
-            || last.latencyMilliseconds != network.latencyMilliseconds
-        return ratesChanged || contextChanged
+        model.statusMessage = "Socket debug log: \(SocketConsoleDiagnostics.logFileURL.path)"
+        model.showStatusBanner = true
+        model.uiGeneration.bump()
     }
 
     private func postStatus(_ message: String) {
         DashboardCollectDiagnostics.log("status: \(message)")
-        SecurityUIUpdate.afterCurrentEvent {
-            statusMessage = message
-            showStatusBanner = true
+        UIViewDeferral.run {
+            model.statusMessage = message
+            model.showStatusBanner = true
+            model.uiGeneration.bump()
         }
     }
 
     private func dismissStatus() {
-        showStatusBanner = false
-        statusMessage = ""
+        UIViewDeferral.run {
+            model.showStatusBanner = false
+            model.statusMessage = ""
+            model.uiGeneration.bump()
+        }
     }
 
     @ViewBuilder
