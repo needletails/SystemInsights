@@ -17,9 +17,10 @@ struct SystemInsightsApp: @preconcurrency App {
         DashboardViewModel.shared.resetForProcessLaunch()
         DashboardCollectDiagnostics.log("app init")
         LinuxSandboxDiagnostics.logStartupReport()
-        DispatchQueue.main.asyncAfter(deadline: DispatchTime.now() + 0.75) {
+        Idle(delay: 750) {
             DashboardCollectDiagnostics.log("app delayed bootstrap request")
             DashboardViewModel.shared.requestDelayedBootstrap()
+            return false
         }
         #endif
     }

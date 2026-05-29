@@ -450,10 +450,11 @@ struct OperationsRoot: @preconcurrency View {
             UIViewDeferral.run {
                 onFirstAppear?()
             }
-            DispatchQueue.main.asyncAfter(deadline: DispatchTime.now() + 0.35) {
+            Idle(delay: 350) {
                 UIViewDeferral.run {
                     onFirstAppear?()
                 }
+                return false // stop repeating timeout
             }
         }
 

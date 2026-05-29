@@ -8,9 +8,15 @@ enum UIViewDeferral {
     /// Preferred entry point for GTK signal handlers and button actions.
     nonisolated static func run(_ work: @escaping () -> Void) {
         let deferred = DeferredUIAction(work)
+        #if os(Linux)
+        Idle {
+            deferred.perform()
+        }
+        #else
         DispatchQueue.main.async {
             deferred.perform()
         }
+        #endif
     }
 
     nonisolated static func afterCurrentEvent(_ work: @escaping () -> Void) {
@@ -21,17 +27,29 @@ enum UIViewDeferral {
     static func setStringIfNeeded(_ binding: Binding<String>, to value: String) {
         let target = DeferredBinding(binding)
         let committed = value
+        #if os(Linux)
+        Idle {
+            target.setIfNeeded(committed)
+        }
+        #else
         DispatchQueue.main.async {
             target.setIfNeeded(committed)
         }
+        #endif
     }
 
     static func setScopeIfNeeded(_ binding: Binding<SocketScope>, id newID: String) {
         let target = DeferredBinding(binding)
         let committed = SocketScope(rawValue: newID) ?? .all
+        #if os(Linux)
+        Idle {
+            target.setIfNeeded(committed)
+        }
+        #else
         DispatchQueue.main.async {
             target.setIfNeeded(committed)
         }
+        #endif
     }
 }
 

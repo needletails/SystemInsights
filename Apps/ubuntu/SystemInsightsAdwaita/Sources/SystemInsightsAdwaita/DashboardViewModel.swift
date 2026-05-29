@@ -84,11 +84,7 @@ final class DashboardViewModel {
     }
 
     func startCollect() {
-        DashboardCollectDiagnostics.log("viewModel startCollect scheduling task")
-        Task { @MainActor in
-            DashboardCollectDiagnostics.log("viewModel startCollect task running")
-            await collectSnapshotAsync()
-        }
+        DashboardCollectRunner.start()
     }
 
     func collectSnapshotAsync() async {
