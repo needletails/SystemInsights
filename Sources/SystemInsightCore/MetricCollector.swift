@@ -221,10 +221,7 @@ public struct SystemMetricCollector: MetricCollecting {
         }
         return Self.parseMacOSVisibleTCPConnections(output.stdout)
         #elseif os(Linux)
-        if let viaSS = linuxCollectVisibleTCPViaSS(), !viaSS.isEmpty {
-            return viaSS
-        }
-        return linuxCollectVisibleTCPViaProc()
+        return linuxCollectVisibleSocketsUnified().filter { $0.transport == .tcp }
         #else
         return []
         #endif
@@ -241,14 +238,7 @@ public struct SystemMetricCollector: MetricCollecting {
         }
         return Self.parseMacOSVisibleSockets(output.stdout)
         #elseif os(Linux)
-        let viaSS = linuxCollectVisibleSocketsViaSS()
-        if !viaSS.isEmpty {
-            Self.linuxLogSocketProbe("ss returned \(viaSS.count) sockets")
-            return viaSS
-        }
-        let viaProc = linuxCollectVisibleSocketsViaProc()
-        Self.linuxLogSocketProbe("proc fallback returned \(viaProc.count) sockets")
-        return viaProc
+        return linuxCollectVisibleSocketsUnified()
         #else
         return await collectVisibleTCPConnections()
         #endif
@@ -688,6 +678,13 @@ public struct SystemMetricCollector: MetricCollecting {
     }
 
     private func linuxDefaultInterface() -> String? {
+        if let fromRoute = linuxDefaultInterfaceFromRoute() {
+            return fromRoute
+        }
+        return linuxDefaultInterfaceFromNetDev()
+    }
+
+    private func linuxDefaultInterfaceFromRoute() -> String? {
         guard let contents = LinuxSandboxAdaptation.procFileContents("net/route") else {
             return nil
         }
@@ -696,6 +693,26 @@ public struct SystemMetricCollector: MetricCollecting {
             guard fields.count > 3, fields[1] == "00000000" else { return nil }
             return String(fields[0])
         }.first
+    }
+
+    private func linuxDefaultInterfaceFromNetDev() -> String? {
+        guard let contents = LinuxSandboxAdaptation.procFileContents("net/dev") else {
+            return nil
+        }
+        var best: (name: String, traffic: Double)?
+        for line in contents.split(whereSeparator: \.isNewline).dropFirst() {
+            let sides = line.split(separator: ":", maxSplits: 1)
+            guard sides.count == 2 else { continue }
+            let name = sides[0].trimmingCharacters(in: .whitespaces)
+            guard name != "lo" else { continue }
+            let values = sides[1].split(whereSeparator: \.isWhitespace).compactMap { Double($0) }
+            guard values.count > 8 else { continue }
+            let traffic = values[0] + values[8]
+            if best == nil || traffic > best!.traffic {
+                best = (name, traffic)
+            }
+        }
+        return best?.name
     }
 
     private func linuxNetworkCounters(for interface: String) -> (received: Double, sent: Double)? {
@@ -749,6 +766,36 @@ public struct SystemMetricCollector: MetricCollecting {
             state: .notDetected,
             detail: "No active Linux tunnel interface was detected."
         )
+    }
+
+    private func linuxCollectVisibleSocketsUnified() -> [VisibleSocket] {
+        var merged: [String: VisibleSocket] = [:]
+
+        if LinuxSandboxAdaptation.isFlatpak {
+            for socket in linuxCollectVisibleSocketsViaProc() {
+                merged[socket.id] = socket
+            }
+            if !merged.isEmpty {
+                Self.linuxLogSocketProbe("flatpak proc returned \(merged.count) sockets")
+            }
+        }
+
+        for socket in linuxCollectVisibleSocketsViaSS() {
+            merged[socket.id] = socket
+        }
+        if !merged.isEmpty {
+            Self.linuxLogSocketProbe("merged inventory \(merged.count) sockets")
+            return merged.values.sorted {
+                if $0.transport != $1.transport { return $0.transport == .tcp }
+                return $0.localEndpoint < $1.localEndpoint
+            }
+            .prefix(NetworkSamplingLimits.maxVisibleSockets)
+            .map { $0 }
+        }
+
+        let viaProc = linuxCollectVisibleSocketsViaProc()
+        Self.linuxLogSocketProbe("proc fallback returned \(viaProc.count) sockets")
+        return viaProc
     }
 
     private func linuxCollectVisibleSocketsViaSS() -> [VisibleSocket] {

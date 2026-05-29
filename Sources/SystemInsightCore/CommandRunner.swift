@@ -55,7 +55,8 @@ enum CommandRunner {
         let resolvedTimeout = timeout
         #endif
 
-        guard FileManager.default.isExecutableFile(atPath: resolvedExecutable) else {
+        guard FileManager.default.isExecutableFile(atPath: resolvedExecutable)
+            || LinuxSandboxAdaptation.hostBinaryRunnable(resolvedExecutable) else {
             return nil
         }
 
@@ -264,7 +265,7 @@ enum LinuxSandboxAdaptation {
             return executable
         }
         let hostCandidate = "/run/host\(executable)"
-        if FileManager.default.isExecutableFile(atPath: hostCandidate) {
+        if FileManager.default.isExecutableFile(atPath: hostCandidate) || hostBinaryRunnable(hostCandidate) {
             return hostCandidate
         }
         return executable
@@ -281,12 +282,27 @@ enum LinuxSandboxAdaptation {
             if FileManager.default.isExecutableFile(atPath: resolved) {
                 return resolved
             }
+            if LinuxSandboxAdaptation.hostBinaryRunnable(resolved) {
+                return resolved
+            }
         }
         return nil
         #else
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
         #endif
     }
+
+    #if os(Linux)
+    /// Host binaries under ``/run/host`` may exist but not appear executable inside the Flatpak sandbox.
+    static func hostBinaryRunnable(_ resolved: String) -> Bool {
+        guard isFlatpak else { return false }
+        let hostPrefix = "/run/host"
+        guard resolved.hasPrefix("\(hostPrefix)/") else { return false }
+        return FileManager.default.fileExists(atPath: resolved)
+    }
+    #else
+    static func hostBinaryRunnable(_ resolved: String) -> Bool { false }
+    #endif
 
     /// When sandboxed, run the command on the host via `flatpak-spawn --host`.
     static func commandInvocation(

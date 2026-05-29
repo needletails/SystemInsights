@@ -28,8 +28,20 @@ final class DashboardBackgroundCoordinator {
         #endif
         telemetryTask = loop(every: .seconds(15), canWork: canWork, work: onTelemetryRefresh)
         snapshotTask = loop(every: .seconds(10 * 60), canWork: canWork, work: onSnapshotCollect)
-        Task { await onLiveNetworkRefresh() }
-        Task { await onSocketRefresh() }
+        scheduleInitialRefresh(
+            onLiveNetworkRefresh: onLiveNetworkRefresh,
+            onSocketRefresh: onSocketRefresh
+        )
+    }
+
+    private func scheduleInitialRefresh(
+        onLiveNetworkRefresh: @escaping @Sendable () async -> Void,
+        onSocketRefresh: @escaping @Sendable () async -> Void
+    ) {
+        Task.detached(priority: .utility) {
+            await onLiveNetworkRefresh()
+            await onSocketRefresh()
+        }
     }
 
     func stop() {

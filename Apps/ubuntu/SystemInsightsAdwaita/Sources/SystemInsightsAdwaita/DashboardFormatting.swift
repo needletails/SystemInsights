@@ -28,6 +28,14 @@ enum DashboardFormatting {
         return "\(Int(milliseconds.rounded())) ms"
     }
 
+    static var socketInventoryCommand: String {
+        #if os(Linux)
+        "$ ss -H -tunap"
+        #else
+        "$ /usr/sbin/lsof  TCP:ESTABLISHED,LISTEN + UDP"
+        #endif
+    }
+
     static func percent(_ value: Double) -> String {
         "\(Int(value.rounded()))%"
     }

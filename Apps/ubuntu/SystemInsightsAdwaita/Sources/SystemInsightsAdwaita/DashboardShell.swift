@@ -12,6 +12,7 @@ import Crypto
 struct DashboardView: @preconcurrency View {
     private var model: DashboardViewModel { .shared }
 
+    @State private var renderTick = 0
     @State private var security: DashboardSecurityState
     @State private var screen: DashboardScreen
     @State private var securityActionInFlight = false
@@ -20,16 +21,11 @@ struct DashboardView: @preconcurrency View {
     @State private var selectedRecord: NetworkRecordSelection?
 
     @State private var announcedSocketLogPath = false
-    @State private var isRefreshingTelemetry = false
-    @State private var isRefreshingLiveNetwork = false
-    @State private var isRefreshingSockets = false
-    @State private var isMonitoring = false
-    @State private var backgroundWork = DashboardBackgroundCoordinator()
-    /// Session key stashed when the user voluntarily locks so Cancel can restore the dashboard.
-    @State private var voluntaryLockUndoKey: SymmetricKey?
+    @State private var pendingReleaseUpdate: ReleaseUpdatePresentation?
     @State private var unlockAllowsCancel = false
     @State private var passwordSetupAllowsCancel = false
-    @State private var pendingReleaseUpdate: ReleaseUpdatePresentation?
+    /// Session key stashed when the user voluntarily locks so Cancel can restore the dashboard.
+    @State private var voluntaryLockUndoKey: SymmetricKey?
 
     init() {
         let initialSecurity = DashboardSecurityState()
@@ -38,7 +34,8 @@ struct DashboardView: @preconcurrency View {
     }
 
     var view: Body {
-        let _ = model.uiGeneration.generation
+        let _ = renderTick
+        let _ = model.viewRenderTick
         OperationsRoot(onFirstAppear: performLaunchBootstrap) {
             screenContent
         }
@@ -57,14 +54,13 @@ struct DashboardView: @preconcurrency View {
     }
 
     private func performLaunchBootstrap() {
+        model.onUIDidChange = {
+            UIViewDeferral.run {
+                renderTick += 1
+            }
+        }
         model.registerDelayedBootstrap(performLaunchBootstrap)
-        model.onCollectComplete = {
-            startMonitoring()
-        }
         model.performLaunchBootstrap(security: &security, screen: &screen)
-        if model.snapshot != nil, !isMonitoring {
-            startMonitoring()
-        }
     }
 
     @ViewBuilder
@@ -129,7 +125,7 @@ struct DashboardView: @preconcurrency View {
                     }
                 )
             } end: {
-                ToolbarActivitySlot(active: model.isCollecting || isRefreshingLiveNetwork || isRefreshingSockets)
+                ToolbarActivitySlot(active: model.isCollecting || model.isRefreshingLiveNetwork || model.isRefreshingSockets)
                 ToolbarGlyphButton(
                     glyph: OperationsGlyphs.symbol(for: .default(icon: .preferencesSystem)),
                     tooltip: "Settings",
@@ -265,8 +261,10 @@ struct DashboardView: @preconcurrency View {
                         .dimLabel()
                         .padding()
                     Button(model.isCollecting ? "Collecting…" : "Collect snapshot") {
-                        DashboardCollectDiagnostics.log("collect button tapped (expect COLLECT_V3 next)")
-                        model.startCollect()
+                        UIViewDeferral.run {
+                            DashboardCollectDiagnostics.log("collect button tapped (expect COLLECT_V3 next)")
+                            model.startCollect()
+                        }
                     }
                     .suggested()
                     .pill()
@@ -405,8 +403,7 @@ struct DashboardView: @preconcurrency View {
         if security.isUnlocked {
             bootstrapAfterUnlock()
         } else {
-            backgroundWork.stop()
-            isMonitoring = false
+            model.stopMonitoring()
         }
     }
 
@@ -427,19 +424,17 @@ struct DashboardView: @preconcurrency View {
     private func bootstrapAfterUnlock() {
         DashboardCollectDiagnostics.log("bootstrap after unlock")
         reloadCachedSnapshot()
-        startMonitoring()
+        model.startMonitoringIfNeeded()
         if model.snapshot == nil {
             model.statusMessage = "No cached snapshot on disk. Collecting a fresh snapshot…"
             model.showStatusBanner = true
-            model.uiGeneration.bump()
+            model.touchUI()
         }
         Task { await checkForReleaseUpdate() }
     }
 
     private func resetAfterLock() {
-        backgroundWork.stop()
         model.clearDashboardData()
-        isMonitoring = false
         var next = security
         next.refresh()
         security = next
@@ -447,7 +442,7 @@ struct DashboardView: @preconcurrency View {
         unlockAllowsCancel = voluntaryLockUndoKey != nil
         model.statusMessage = "Cache locked. Enter your password to continue."
         model.showStatusBanner = true
-        model.uiGeneration.bump()
+        model.touchUI()
     }
 
     private func reloadCachedSnapshot() {
@@ -457,21 +452,22 @@ struct DashboardView: @preconcurrency View {
             model.applySnapshot(loaded)
             model.statusMessage = "Loaded the latest cached snapshot."
             model.showStatusBanner = true
-            model.uiGeneration.bump()
+            model.touchUI()
+            model.startMonitoringIfNeeded()
         } catch SnapshotCacheLockError.locked {
             CacheSecurityCoordinator.lock()
             reconcileSecurityWithScreen(bootstrapIfUnlocked: false)
             model.statusMessage = "Cache is locked. Enter your password to decrypt stored data."
             model.showStatusBanner = true
-            model.uiGeneration.bump()
+            model.touchUI()
         } catch CocoaError.fileReadNoSuchFile {
             model.statusMessage = "No encrypted snapshot found yet. Collecting a fresh snapshot…"
             model.showStatusBanner = true
-            model.uiGeneration.bump()
+            model.touchUI()
         } catch {
             model.statusMessage = "Unable to read cache: \(error.localizedDescription)"
             model.showStatusBanner = true
-            model.uiGeneration.bump()
+            model.touchUI()
         }
     }
 
@@ -479,153 +475,12 @@ struct DashboardView: @preconcurrency View {
         model.startCollect()
     }
 
-    private func startMonitoring() {
-        guard security.isUnlocked else { return }
-        isMonitoring = true
-        if model.snapshot == nil {
-            model.startCollect()
-        }
-
-        backgroundWork.start(
-            canWork: { security.isUnlocked && isMonitoring },
-            onLiveNetworkRefresh: { await refreshLiveNetworkAsync() },
-            onSocketRefresh: { await refreshSocketTableAsync() },
-            onTelemetryRefresh: { await refreshTelemetryAsync() },
-            onSnapshotCollect: { await model.collectSnapshotAsync() }
-        )
-    }
-
-    private func refreshTelemetryAsync() async {
-        guard security.isUnlocked, !isRefreshingTelemetry, let currentSnapshot = model.snapshot else {
-            return
-        }
-        isRefreshingTelemetry = true
-        defer { isRefreshingTelemetry = false }
-
-        do {
-            let activitySnapshot = await UIViewDeferral.readOnMain { model.recentActivity }
-            let refreshedSnapshot = try await Task.detached {
-                let refreshedMetrics = try await NetworkSamplingService.shared.collectMetrics()
-                return DashboardSamplingPipeline.buildTelemetrySnapshot(
-                    current: currentSnapshot,
-                    metrics: refreshedMetrics,
-                    recentActivity: activitySnapshot
-                )
-            }.value
-            await UIViewDeferral.readOnMain {
-                model.applyTelemetrySnapshot(refreshedSnapshot)
-            }
-        } catch {
-            await UIViewDeferral.readOnMain {
-                model.statusMessage = "Telemetry refresh failed: \(error.localizedDescription)"
-                model.showStatusBanner = true
-                model.uiGeneration.bump()
-            }
-        }
-    }
-
-    private func refreshLiveNetworkAsync() async {
-        guard security.isUnlocked else { return }
-        isRefreshingLiveNetwork = true
-        defer { isRefreshingLiveNetwork = false }
-
-        let baseline = await UIViewDeferral.readOnMain {
-            model.liveNetwork ?? model.snapshot?.metrics.network ?? .unavailable
-        }
-        let establishedCount = await UIViewDeferral.readOnMain {
-            model.visibleSockets.filter { $0.state == .established }.count
-        }
-        do {
-            let network = try await DashboardSamplingPipeline.pollLiveNetwork(
-                preserving: baseline,
-                establishedTCPCount: establishedCount
-            )
-            await UIViewDeferral.readOnMain {
-                model.applyLiveNetwork(network)
-            }
-        } catch {
-            await UIViewDeferral.readOnMain {
-                model.statusMessage = "Network refresh failed: \(error.localizedDescription)"
-                model.showStatusBanner = true
-                model.uiGeneration.bump()
-            }
-        }
-    }
-
-    private func refreshSocketTableAsync() async {
-        guard security.isUnlocked else { return }
-        isRefreshingSockets = true
-        defer { isRefreshingSockets = false }
-
-        let baseline = await UIViewDeferral.readOnMain {
-            model.liveNetwork ?? model.snapshot?.metrics.network ?? .unavailable
-        }
-        let establishedCount = await UIViewDeferral.readOnMain {
-            model.visibleSockets.filter { $0.state == .established }.count
-        }
-        do {
-            let sample = try await DashboardSamplingPipeline.pollNetwork(
-                preserving: baseline,
-                establishedTCPCount: establishedCount
-            )
-            await UIViewDeferral.readOnMain {
-                model.applyLiveNetwork(sample.network)
-            }
-
-            let fingerprintSnapshot = await UIViewDeferral.readOnMain { model.lastSocketFingerprint }
-            let previousConnectionsSnapshot = await UIViewDeferral.readOnMain { model.previousConnections }
-            let activitySnapshot = await UIViewDeferral.readOnMain { model.recentActivity }
-            let socketUpdate = await Task.detached {
-                DashboardSamplingPipeline.prepareSocketUIUpdate(
-                    connections: sample.connections,
-                    previousFingerprint: fingerprintSnapshot,
-                    previousConnections: previousConnectionsSnapshot,
-                    recentActivity: activitySnapshot
-                )
-            }.value
-            if let socketUpdate {
-                await UIViewDeferral.readOnMain {
-                    applySocketUIUpdate(socketUpdate, source: "socket-poll")
-                }
-            }
-        } catch {
-            await UIViewDeferral.readOnMain {
-                model.statusMessage = "Socket refresh failed: \(error.localizedDescription)"
-                model.showStatusBanner = true
-                model.uiGeneration.bump()
-            }
-        }
-    }
-
-    private func applyTelemetrySnapshot(_ refreshedSnapshot: InsightSnapshot) {
-        model.applyTelemetrySnapshot(refreshedSnapshot)
-    }
-
-    private func applySocketUIUpdate(_ update: DashboardSamplingPipeline.SocketUIUpdate, source: String) {
-        announceSocketLogIfNeeded()
-        let connections = update.connections
-        let fingerprint = update.fingerprint
-        let index = update.index
-        let activity = update.recentActivity
-        Task.detached {
-            SocketConsoleDiagnostics.logRefresh(
-                source: source,
-                connections: connections,
-                fingerprint: fingerprint,
-                appliedToUI: true
-            )
-        }
-        UIViewDeferral.run {
-            model.applyLiveSocketUpdate(update)
-        }
-    }
-
     private func announceSocketLogIfNeeded() {
         guard SocketConsoleDiagnostics.isEnabled, !announcedSocketLogPath else { return }
         announcedSocketLogPath = true
         model.statusMessage = "Socket debug log: \(SocketConsoleDiagnostics.logFileURL.path)"
         model.showStatusBanner = true
-        model.uiGeneration.bump()
+        model.touchUI()
     }
 
     private func postStatus(_ message: String) {
@@ -633,7 +488,7 @@ struct DashboardView: @preconcurrency View {
         UIViewDeferral.run {
             model.statusMessage = message
             model.showStatusBanner = true
-            model.uiGeneration.bump()
+            model.touchUI()
         }
     }
 
@@ -641,7 +496,7 @@ struct DashboardView: @preconcurrency View {
         UIViewDeferral.run {
             model.showStatusBanner = false
             model.statusMessage = ""
-            model.uiGeneration.bump()
+            model.touchUI()
         }
     }
 

@@ -30,17 +30,17 @@ enum DashboardCollectRunner {
     nonisolated private static func runCollectWork() async {
         DashboardCollectDiagnostics.log("\(buildMarker) collect work entered")
 
-        let unlocked = await gtkMain {
+        let unlocked = await DashboardGTKBridge.runOnMain {
             DashboardViewModel.shared.cacheIsUnlockedForCollect()
         }
         guard unlocked else {
-            await gtkMain {
+            await DashboardGTKBridge.runOnMain {
                 DashboardViewModel.shared.reportCollectLocked()
             }
             return
         }
 
-        await gtkMain {
+        await DashboardGTKBridge.runOnMain {
             DashboardViewModel.shared.prepareCacheSessionIfNeeded()
             DashboardViewModel.shared.markCollectStarted()
         }
@@ -74,7 +74,7 @@ enum DashboardCollectRunner {
             }.value
             DashboardCollectDiagnostics.log("\(buildMarker) cache write ok")
 
-            await gtkMain {
+            await DashboardGTKBridge.runOnMain {
                 DashboardViewModel.shared.markCollectSucceeded(
                     snapshot: collectedSnapshot,
                     socketUpdate: socketUpdate
@@ -82,22 +82,8 @@ enum DashboardCollectRunner {
             }
         } catch {
             DashboardCollectDiagnostics.log("\(buildMarker) collect failed: \(error)")
-            await gtkMain {
+            await DashboardGTKBridge.runOnMain {
                 DashboardViewModel.shared.markCollectFailed(error)
-            }
-        }
-    }
-
-    /// Schedule synchronous MainActor work on the GTK main loop.
-    nonisolated private static func gtkMain<T: Sendable>(
-        _ work: @escaping @MainActor () -> T
-    ) async -> T {
-        await withCheckedContinuation { continuation in
-            Idle {
-                let value = MainActor.assumeIsolated {
-                    work()
-                }
-                continuation.resume(returning: value)
             }
         }
     }

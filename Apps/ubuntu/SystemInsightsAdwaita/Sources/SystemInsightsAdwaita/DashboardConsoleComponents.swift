@@ -471,7 +471,7 @@ struct SocketConsolePanel: View {
             .style("operations-console-header")
 
             HStack(spacing: 10) {
-                Text("$ /usr/sbin/lsof  TCP:ESTABLISHED,LISTEN + UDP")
+                Text(DashboardFormatting.socketInventoryCommand)
                     .caption()
                     .monospace()
                     .success()

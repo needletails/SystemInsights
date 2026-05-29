@@ -1,3 +1,4 @@
+import Adwaita
 import Foundation
 import SystemInsightCore
 
@@ -6,8 +7,8 @@ import SystemInsightCore
 final class DashboardViewModel {
     static let shared = DashboardViewModel()
 
-    weak var renderState: DashboardRenderState?
-    /// Survives GTK recreating ``DashboardView``; do not store this on the view as ``@State``.
+    /// Survives GTK recreating ``DashboardView``; read in the view body to trigger redraws.
+    private(set) var viewRenderTick = 0
     let uiGeneration = DashboardRenderState()
 
     private(set) var didBootstrap = false
@@ -26,7 +27,17 @@ final class DashboardViewModel {
     private(set) var previousConnections: [String: VisibleSocket]?
 
     private var delayedBootstrap: (() -> Void)?
+    /// View registers this so Adwaita re-renders when singleton state changes.
+    var onUIDidChange: (() -> Void)?
     var onCollectComplete: (() -> Void)?
+
+    private let backgroundWork = DashboardBackgroundCoordinator()
+    private(set) var isMonitoring = false
+    private(set) var isRefreshingTelemetry = false
+    private(set) var isRefreshingLiveNetwork = false
+    private(set) var isRefreshingSockets = false
+
+    private var lastGraphSampleAt: Date?
 
     private init() {}
 
@@ -41,18 +52,24 @@ final class DashboardViewModel {
 
     func requestDelayedBootstrap() {
         delayedBootstrap?()
-    }
-
-    func bind(renderState: DashboardRenderState) {
-        self.renderState = renderState
+        if !didBootstrap {
+            DashboardCollectDiagnostics.log("delayed bootstrap: view not ready, retrying")
+            Idle(delay: 400) {
+                self.delayedBootstrap?()
+                return false
+            }
+        }
     }
 
     private func notifyUI() {
+        viewRenderTick += 1
         uiGeneration.bump()
-        renderState?.bump()
+        onUIDidChange?()
     }
 
-    private var lastGraphSampleAt: Date?
+    func touchUI() {
+        notifyUI()
+    }
 
     func applyLiveNetwork(_ network: NetworkMetrics) {
         var samples = liveNetworkSamples
@@ -84,6 +101,7 @@ final class DashboardViewModel {
     }
 
     func clearDashboardData() {
+        stopMonitoring()
         snapshot = nil
         recentActivity = []
         liveNetwork = nil
@@ -109,8 +127,9 @@ final class DashboardViewModel {
     func performLaunchBootstrap(security: inout DashboardSecurityState, screen: inout DashboardScreen) {
         if didBootstrap {
             DashboardCollectDiagnostics.log(
-                "dashboard bootstrap skipped (didBootstrap=true snapshot=\(snapshot != nil))"
+                "dashboard bootstrap skipped (didBootstrap=true snapshot=\(snapshot != nil) monitoring=\(isMonitoring))"
             )
+            startMonitoringIfNeeded()
             return
         }
         didBootstrap = true
@@ -131,6 +150,162 @@ final class DashboardViewModel {
             showStatusBanner = true
             notifyUI()
             startCollect()
+        }
+        startMonitoringIfNeeded()
+    }
+
+    func startMonitoringIfNeeded() {
+        guard cacheIsUnlockedForCollect() else { return }
+        if snapshot == nil, !isCollecting {
+            startCollect()
+        }
+        guard !isMonitoring else { return }
+        isMonitoring = true
+        DashboardCollectDiagnostics.log("monitoring started")
+        backgroundWork.start(
+            canWork: { [weak self] in
+                guard let self else { return false }
+                return self.isMonitoring && self.cacheIsUnlockedForCollect()
+            },
+            onLiveNetworkRefresh: { await self.refreshLiveNetworkAsync() },
+            onSocketRefresh: { await self.refreshSocketTableAsync() },
+            onTelemetryRefresh: { await self.refreshTelemetryAsync() },
+            onSnapshotCollect: { await self.collectSnapshotAsync() }
+        )
+    }
+
+    func stopMonitoring() {
+        guard isMonitoring else { return }
+        isMonitoring = false
+        backgroundWork.stop()
+        DashboardCollectDiagnostics.log("monitoring stopped")
+    }
+
+    private func refreshTelemetryAsync() async {
+        let context = await DashboardGTKBridge.runOnMain { () -> (Bool, InsightSnapshot?, [NetworkActivityEvent]) in
+            guard self.cacheIsUnlockedForCollect(), !self.isRefreshingTelemetry, let snap = self.snapshot else {
+                return (false, nil, [])
+            }
+            self.isRefreshingTelemetry = true
+            return (true, snap, self.recentActivity)
+        }
+        guard context.0, let currentSnapshot = context.1 else { return }
+        defer {
+            Task { await DashboardGTKBridge.runOnMain { self.isRefreshingTelemetry = false } }
+        }
+
+        do {
+            let activitySnapshot = context.2
+            let refreshedSnapshot = try await Task.detached {
+                let refreshedMetrics = try await NetworkSamplingService.shared.collectMetrics()
+                return DashboardSamplingPipeline.buildTelemetrySnapshot(
+                    current: currentSnapshot,
+                    metrics: refreshedMetrics,
+                    recentActivity: activitySnapshot
+                )
+            }.value
+            await DashboardGTKBridge.runOnMain {
+                self.applyTelemetrySnapshot(refreshedSnapshot)
+            }
+        } catch {
+            DashboardCollectDiagnostics.log("telemetry refresh failed: \(error)")
+        }
+    }
+
+    private func refreshLiveNetworkAsync() async {
+        let shouldRun = await DashboardGTKBridge.runOnMain {
+            guard self.cacheIsUnlockedForCollect() else { return false }
+            self.isRefreshingLiveNetwork = true
+            return true
+        }
+        guard shouldRun else { return }
+        defer {
+            Task { await DashboardGTKBridge.runOnMain { self.isRefreshingLiveNetwork = false } }
+        }
+
+        let inputs = await DashboardGTKBridge.runOnMain {
+            (
+                self.liveNetwork ?? self.snapshot?.metrics.network ?? .unavailable,
+                self.visibleSockets.filter { $0.state == .established }.count
+            )
+        }
+        do {
+            let network = try await DashboardSamplingPipeline.pollLiveNetwork(
+                preserving: inputs.0,
+                establishedTCPCount: inputs.1
+            )
+            await DashboardGTKBridge.runOnMain {
+                self.applyLiveNetwork(network)
+            }
+            DashboardCollectDiagnostics.log(
+                "network poll: rx=\(Int(network.receivedBytesPerSecond)) tx=\(Int(network.sentBytesPerSecond)) if=\(network.interfaceName ?? "?")"
+            )
+        } catch {
+            DashboardCollectDiagnostics.log("network refresh failed: \(error)")
+        }
+    }
+
+    private func refreshSocketTableAsync() async {
+        let context = await DashboardGTKBridge.runOnMain { () -> (Bool, NetworkMetrics, Int, UInt64?, [String: VisibleSocket]?, [NetworkActivityEvent], Bool) in
+            guard self.cacheIsUnlockedForCollect() else {
+                return (false, .unavailable, 0, nil, nil, [], false)
+            }
+            self.isRefreshingSockets = true
+            let baseline = self.liveNetwork ?? self.snapshot?.metrics.network ?? .unavailable
+            let count = self.visibleSockets.filter { $0.state == .established }.count
+            let force = self.visibleSockets.isEmpty
+            return (true, baseline, count, self.lastSocketFingerprint, self.previousConnections, self.recentActivity, force)
+        }
+        guard context.0 else { return }
+        defer {
+            Task { await DashboardGTKBridge.runOnMain { self.isRefreshingSockets = false } }
+        }
+
+        do {
+            let sample = try await DashboardSamplingPipeline.pollNetwork(
+                preserving: context.1,
+                establishedTCPCount: context.2
+            )
+            await DashboardGTKBridge.runOnMain {
+                self.applyLiveNetwork(sample.network)
+            }
+
+            let connections = sample.connections
+            let fingerprint = context.3
+            let previous = context.4
+            let activity = context.5
+            let force = context.6
+            let socketUpdate = await Task.detached {
+                DashboardSamplingPipeline.prepareSocketUIUpdate(
+                    connections: connections,
+                    previousFingerprint: fingerprint,
+                    previousConnections: previous,
+                    recentActivity: activity,
+                    force: force
+                )
+            }.value
+            if let socketUpdate {
+                await DashboardGTKBridge.runOnMain {
+                    self.applyLiveSocketUpdate(socketUpdate)
+                }
+                DashboardCollectDiagnostics.log(
+                    "socket poll: \(socketUpdate.connections.count) sockets rx=\(Int(sample.network.receivedBytesPerSecond)) tx=\(Int(sample.network.sentBytesPerSecond))"
+                )
+            } else if !connections.isEmpty {
+                await DashboardGTKBridge.runOnMain {
+                    self.applyLiveSocketUpdate(
+                        DashboardSamplingPipeline.SocketUIUpdate(
+                            connections: connections,
+                            fingerprint: VisibleSocketSampling.fingerprint(connections),
+                            index: SocketConsoleFilter.buildIndex(connections: connections),
+                            recentActivity: activity,
+                            previousConnections: Dictionary(uniqueKeysWithValues: connections.map { ($0.id, $0) })
+                        )
+                    )
+                }
+            }
+        } catch {
+            DashboardCollectDiagnostics.log("socket refresh failed: \(error)")
         }
     }
 
@@ -188,6 +363,7 @@ final class DashboardViewModel {
         notifyUI()
         DashboardCollectDiagnostics.log("collect: snapshot applied to view model")
         onCollectComplete?()
+        startMonitoringIfNeeded()
     }
 
     func markCollectFailed(_ error: Error) {
@@ -201,35 +377,38 @@ final class DashboardViewModel {
     }
 
     func collectSnapshotAsync() async {
-        let unlocked = !CacheSecurityCoordinator.isPasswordProtectionEnabled()
-            || CacheSecurityCoordinator.isUnlocked()
+        let unlocked = await DashboardGTKBridge.runOnMain { self.cacheIsUnlockedForCollect() }
         DashboardCollectDiagnostics.log(
-            "collect async entry unlocked=\(unlocked) collecting=\(isCollecting) snapshot=\(snapshot != nil)"
+            "collect async entry unlocked=\(unlocked) collecting=\(await DashboardGTKBridge.runOnMain { self.isCollecting }) snapshot=\(await DashboardGTKBridge.runOnMain { self.snapshot != nil })"
         )
         guard unlocked else {
-            statusMessage = "Cache is locked. Unlock before collecting a snapshot."
-            showStatusBanner = true
-            notifyUI()
+            await DashboardGTKBridge.runOnMain {
+                self.statusMessage = "Cache is locked. Unlock before collecting a snapshot."
+                self.showStatusBanner = true
+                self.notifyUI()
+            }
             return
         }
-        if isCollecting {
-            DashboardCollectDiagnostics.log("collect: clearing stuck isCollecting flag")
-            isCollecting = false
-            notifyUI()
-        }
 
-        isCollecting = true
-        statusMessage = "Collecting snapshot…"
-        showStatusBanner = true
-        notifyUI()
+        await DashboardGTKBridge.runOnMain {
+            if self.isCollecting {
+                DashboardCollectDiagnostics.log("collect: clearing stuck isCollecting flag")
+                self.isCollecting = false
+            }
+            self.isCollecting = true
+            self.statusMessage = "Collecting snapshot…"
+            self.showStatusBanner = true
+            self.notifyUI()
+        }
         DashboardCollectDiagnostics.log("collect started")
         defer {
-            isCollecting = false
-            notifyUI()
+            Task { await DashboardGTKBridge.runOnMain {
+                self.isCollecting = false
+                self.notifyUI()
+            }}
         }
 
         let startedAt = Date()
-
         do {
             DashboardCollectDiagnostics.log("collect: policy scan…")
             let baseSnapshot = try await NetworkSamplingService.shared.fullSnapshot()
@@ -241,53 +420,55 @@ final class DashboardViewModel {
             let sockets = await NetworkSamplingService.shared.visibleSockets()
             DashboardCollectDiagnostics.log("collect: sockets=\(sockets.count)")
 
-            let previousConnectionsSnapshot = previousConnections
-            let activitySnapshot = recentActivity
+            let prepContext = await DashboardGTKBridge.runOnMain {
+                (self.previousConnections, self.recentActivity)
+            }
             let socketUpdate = await Task.detached {
                 DashboardSamplingPipeline.prepareSocketUIUpdate(
                     connections: sockets,
                     previousFingerprint: nil,
-                    previousConnections: previousConnectionsSnapshot,
-                    recentActivity: activitySnapshot,
+                    previousConnections: prepContext.0,
+                    recentActivity: prepContext.1,
                     force: true
                 )
             }.value
-            if let socketUpdate {
-                visibleSockets = socketUpdate.connections
-                recentActivity = socketUpdate.recentActivity
-                lastSocketSampleAt = Date()
-                socketSearchIndex = socketUpdate.index
-                lastSocketFingerprint = socketUpdate.fingerprint
-                previousConnections = socketUpdate.previousConnections
-            }
-            notifyUI()
-            liveNetwork = baseSnapshot.metrics.network
-            liveNetworkSamples = [baseSnapshot.metrics.network]
+
             let collectedSnapshot = baseSnapshot.withNetworkActivity(
-                Array(recentActivity.prefix(NetworkSamplingLimits.maxActivityEvents))
+                Array((socketUpdate?.recentActivity ?? prepContext.1).prefix(NetworkSamplingLimits.maxActivityEvents))
             )
-            snapshot = collectedSnapshot
-            notifyUI()
-            DashboardCollectDiagnostics.log("collect: snapshot applied to view model")
-            do {
-                try await Task.detached {
-                    try DashboardCacheLocations.writeSnapshot(collectedSnapshot)
-                }.value
-                DashboardCollectDiagnostics.log("collect: cache write ok")
-                statusMessage = "Collected a fresh policy scan and live snapshot."
-            } catch {
-                DashboardCollectDiagnostics.log("collect: cache write failed: \(error)")
-                statusMessage =
-                    "Snapshot collected but could not save to cache: \(error.localizedDescription)"
+
+            try await Task.detached {
+                try DashboardCacheLocations.writeSnapshot(collectedSnapshot)
+            }.value
+            DashboardCollectDiagnostics.log("collect: cache write ok")
+
+            await DashboardGTKBridge.runOnMain {
+                if let socketUpdate {
+                    self.visibleSockets = socketUpdate.connections
+                    self.recentActivity = socketUpdate.recentActivity
+                    self.lastSocketSampleAt = Date()
+                    self.socketSearchIndex = socketUpdate.index
+                    self.lastSocketFingerprint = socketUpdate.fingerprint
+                    self.previousConnections = socketUpdate.previousConnections
+                }
+                self.liveNetwork = baseSnapshot.metrics.network
+                self.liveNetworkSamples = [baseSnapshot.metrics.network]
+                self.snapshot = collectedSnapshot
+                self.statusMessage = "Collected a fresh policy scan and live snapshot."
+                self.showStatusBanner = true
+                self.notifyUI()
             }
-            showStatusBanner = true
-            notifyUI()
-            onCollectComplete?()
+            DashboardCollectDiagnostics.log("collect: snapshot applied to view model")
+            await DashboardGTKBridge.runOnMain {
+                self.onCollectComplete?()
+            }
         } catch {
             DashboardCollectDiagnostics.log("collect failed: \(error)")
-            statusMessage = "Collection failed: \(error.localizedDescription)"
-            showStatusBanner = true
-            notifyUI()
+            await DashboardGTKBridge.runOnMain {
+                self.statusMessage = "Collection failed: \(error.localizedDescription)"
+                self.showStatusBanner = true
+                self.notifyUI()
+            }
         }
     }
 
@@ -332,6 +513,7 @@ final class DashboardViewModel {
             statusMessage = "Loaded the latest cached snapshot."
             showStatusBanner = true
             notifyUI()
+            DashboardCollectDiagnostics.log("reload cache: ok score=\(loaded.score)")
         } catch SnapshotCacheLockError.locked {
             DashboardCollectDiagnostics.log("reload cache: locked")
         } catch CocoaError.fileReadNoSuchFile {
