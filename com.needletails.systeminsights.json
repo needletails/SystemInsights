@@ -15,6 +15,7 @@
     "--socket=wayland",
     "--filesystem=host-os:ro",
     "--filesystem=home",
+    "--talk-name=org.freedesktop.DBus",
     "--persist=.local/share/system-insights",
     "--talk-name=org.freedesktop.Flatpak"
   ],

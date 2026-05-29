@@ -229,12 +229,13 @@ enum LinuxSandboxAdaptation {
         let trimmed = relativePath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let hostMountedPath = "/run/host/proc/\(trimmed)"
         if FileManager.default.fileExists(atPath: hostMountedPath),
-           let contents = try? String(contentsOfFile: hostMountedPath, encoding: .utf8) {
+           let contents = try? String(contentsOfFile: hostMountedPath, encoding: .utf8),
+           !contents.isEmpty {
             return contents
         }
 
         #if os(Linux)
-        if isFlatpak, let contents = flatpakHostTextFile("/proc/\(trimmed)") {
+        if isFlatpak, let contents = hostProcFileViaSpawn(trimmed) {
             return contents
         }
         #endif
@@ -243,13 +244,36 @@ enum LinuxSandboxAdaptation {
         return try? String(contentsOfFile: sandboxPath, encoding: .utf8)
     }
 
-    private static func flatpakHostTextFile(_ path: String) -> String? {
+    /// Host network counters and socket tables. In Flatpak, sandbox ``/proc/net`` only reflects the app namespace.
+    static func networkProcFileContents(_ relativePath: String) -> String? {
+        let trimmed = relativePath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let hostMountedPath = "/run/host/proc/\(trimmed)"
+        if FileManager.default.fileExists(atPath: hostMountedPath),
+           let contents = try? String(contentsOfFile: hostMountedPath, encoding: .utf8),
+           !contents.isEmpty {
+            return contents
+        }
+
+        #if os(Linux)
+        if isFlatpak {
+            let timeout: TimeInterval = trimmed.hasPrefix("net/") ? 6 : 3
+            return hostProcFileViaSpawn(trimmed, timeout: timeout)
+        }
+        #endif
+
+        return procFileContents(trimmed)
+    }
+
+    private static func hostProcFileViaSpawn(_ relativePath: String, timeout: TimeInterval = 3) -> String? {
         #if os(Linux)
         guard isFlatpak, let cat = firstExecutable(["/bin/cat", "/usr/bin/cat"]) else {
             return nil
         }
-        guard let output = CommandRunner.run(cat, arguments: [path], timeout: 2),
-              output.exitCode == 0 else {
+        guard
+            let output = CommandRunner.run(cat, arguments: ["/proc/\(relativePath)"], timeout: timeout),
+            output.exitCode == 0,
+            !output.stdout.isEmpty
+        else {
             return nil
         }
         return output.stdout

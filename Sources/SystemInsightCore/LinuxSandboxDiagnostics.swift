@@ -19,8 +19,9 @@ public enum LinuxSandboxDiagnostics: Sendable {
             FileManager.default.isExecutableFile(atPath: $0)
         }
 
+        let hostNetDev = LinuxSandboxAdaptation.networkProcFileContents("net/dev") != nil
         let line = """
-        [SystemInsights] sandbox flatpak=\(flatpakID) home=\(home) hostRoot=\(hostRoot) hostProc=\(hostProc) hostProcReadable=\(hostProcReadable) hostSysNet=\(hostSysNet) proc=\(procDirectory) diskPath=\(diskPath) diskUsage=\(diskUsage.map { String(format: "%.1f%%", $0) } ?? "n/a") cache=\(cacheDirectory) cacheWritable=\(cacheWritable) flatpakSpawn=\(spawnAvailable)
+        [SystemInsights] sandbox flatpak=\(flatpakID) home=\(home) hostRoot=\(hostRoot) hostProc=\(hostProc) hostProcReadable=\(hostProcReadable) hostSysNet=\(hostSysNet) hostNetDev=\(hostNetDev) proc=\(procDirectory) diskPath=\(diskPath) diskUsage=\(diskUsage.map { String(format: "%.1f%%", $0) } ?? "n/a") cache=\(cacheDirectory) cacheWritable=\(cacheWritable) flatpakSpawn=\(spawnAvailable)
 
         """
         FileHandle.standardError.write(Data(line.utf8))

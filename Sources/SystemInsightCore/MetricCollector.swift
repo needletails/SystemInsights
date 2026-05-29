@@ -196,6 +196,15 @@ public struct SystemMetricCollector: MetricCollecting {
             received: counters?.received,
             sent: counters?.sent
         )
+        if let interface, let counters {
+            Self.logLinuxNetworkProofOnce(
+                interface: interface,
+                receivedTotal: counters.received,
+                sentTotal: counters.sent,
+                receivedRate: rates.received,
+                sentRate: rates.sent
+            )
+        }
         return NetworkMetrics(
             interfaceName: interface,
             receivedBytesPerSecond: rates.received,
@@ -684,7 +693,7 @@ public struct SystemMetricCollector: MetricCollecting {
     }
 
     private func linuxDefaultInterfaceFromRoute() -> String? {
-        guard let contents = LinuxSandboxAdaptation.procFileContents("net/route") else {
+        guard let contents = LinuxSandboxAdaptation.networkProcFileContents("net/route") else {
             return nil
         }
         return contents.split(whereSeparator: \.isNewline).dropFirst().compactMap { (line: Substring) -> String? in
@@ -695,7 +704,7 @@ public struct SystemMetricCollector: MetricCollecting {
     }
 
     private func linuxDefaultInterfaceFromNetDev() -> String? {
-        guard let contents = LinuxSandboxAdaptation.procFileContents("net/dev") else {
+        guard let contents = LinuxSandboxAdaptation.networkProcFileContents("net/dev") else {
             return nil
         }
         var best: (name: String, traffic: Double)?
@@ -715,7 +724,7 @@ public struct SystemMetricCollector: MetricCollecting {
     }
 
     private func linuxNetworkCounters(for interface: String) -> (received: Double, sent: Double)? {
-        guard let contents = LinuxSandboxAdaptation.procFileContents("net/dev") else {
+        guard let contents = LinuxSandboxAdaptation.networkProcFileContents("net/dev") else {
             return nil
         }
         for line in contents.split(whereSeparator: \.isNewline) {
@@ -733,7 +742,7 @@ public struct SystemMetricCollector: MetricCollecting {
 
     private func linuxActiveTCPConnections() -> Int {
         ["net/tcp", "net/tcp6"].reduce(0) { count, path in
-            guard let contents = LinuxSandboxAdaptation.procFileContents(path) else { return count }
+            guard let contents = LinuxSandboxAdaptation.networkProcFileContents(path) else { return count }
             let established = contents.split(whereSeparator: \.isNewline).dropFirst().filter { line in
                 let fields = line.split(whereSeparator: \.isWhitespace)
                 return fields.count > 3 && fields[3] == "01"
@@ -768,23 +777,19 @@ public struct SystemMetricCollector: MetricCollecting {
     }
 
     private func linuxCollectVisibleSocketsUnified() -> [VisibleSocket] {
+        if LinuxSandboxAdaptation.isFlatpak {
+            let viaSS = linuxCollectVisibleSocketsViaSS()
+            if !viaSS.isEmpty {
+                Self.linuxLogSocketProbe("flatpak host ss returned \(viaSS.count) sockets")
+                return viaSS
+            }
+            let viaProc = linuxCollectVisibleSocketsViaProc(owners: [:])
+            Self.linuxLogSocketProbe("flatpak proc returned \(viaProc.count) sockets (ss empty)")
+            return viaProc
+        }
+
         var merged: [String: VisibleSocket] = [:]
         let owners = linuxBuildSocketInodeOwnerMap()
-
-        if LinuxSandboxAdaptation.isFlatpak {
-            for socket in linuxCollectVisibleSocketsViaProc(owners: owners) {
-                merged[socket.id] = socket
-            }
-            if !merged.isEmpty {
-                Self.linuxLogSocketProbe("flatpak proc returned \(merged.count) sockets (inode map=\(owners.count))")
-                return merged.values.sorted {
-                    if $0.transport != $1.transport { return $0.transport == .tcp }
-                    return $0.localEndpoint < $1.localEndpoint
-                }
-                .prefix(NetworkSamplingLimits.maxVisibleSockets)
-                .map { $0 }
-            }
-        }
 
         for socket in linuxCollectVisibleSocketsViaSS() {
             merged[socket.id] = socket
@@ -825,15 +830,22 @@ public struct SystemMetricCollector: MetricCollecting {
             Self.linuxLogSocketProbe("ss produced no output")
             return []
         }
+        let tcpText = tcpOutput?.stdout ?? ""
+        let udpText = udpOutput?.stdout ?? ""
+        if tcpText.isEmpty && udpText.isEmpty {
+            if tcpOutput?.exitCode != 0 || udpOutput?.exitCode != 0 {
+                Self.linuxLogSocketProbe(
+                    "ss exit tcp=\(tcpOutput?.exitCode ?? -1) udp=\(udpOutput?.exitCode ?? -1) stderr=\(tcpOutput?.stderr.prefix(120) ?? udpOutput?.stderr.prefix(120) ?? "")"
+                )
+            }
+            return []
+        }
         if tcpOutput?.exitCode != 0 || udpOutput?.exitCode != 0 {
             Self.linuxLogSocketProbe(
-                "ss exit tcp=\(tcpOutput?.exitCode ?? -1) udp=\(udpOutput?.exitCode ?? -1) stderr=\(tcpOutput?.stderr.prefix(120) ?? udpOutput?.stderr.prefix(120) ?? "")"
+                "ss partial tcp=\(tcpOutput?.exitCode ?? -1) udp=\(udpOutput?.exitCode ?? -1) lines=\(tcpText.split(whereSeparator: \.isNewline).count)+\(udpText.split(whereSeparator: \.isNewline).count)"
             )
         }
-        return Self.parseLinuxVisibleSockets(
-            tcpText: tcpOutput?.exitCode == 0 ? tcpOutput?.stdout ?? "" : "",
-            udpText: udpOutput?.exitCode == 0 ? udpOutput?.stdout ?? "" : ""
-        )
+        return Self.parseLinuxVisibleSockets(tcpText: tcpText, udpText: udpText)
     }
 
     private func linuxCollectVisibleTCPViaSS() -> [VisibleSocket]? {
@@ -854,10 +866,10 @@ public struct SystemMetricCollector: MetricCollecting {
     }
 
     private func linuxCollectVisibleSocketsViaProc(owners: [UInt64: (pid: Int, processName: String)] = [:]) -> [VisibleSocket] {
-        let tcp = LinuxSandboxAdaptation.procFileContents("net/tcp") ?? ""
-        let tcp6 = LinuxSandboxAdaptation.procFileContents("net/tcp6") ?? ""
-        let udp = LinuxSandboxAdaptation.procFileContents("net/udp") ?? ""
-        let udp6 = LinuxSandboxAdaptation.procFileContents("net/udp6") ?? ""
+        let tcp = LinuxSandboxAdaptation.networkProcFileContents("net/tcp") ?? ""
+        let tcp6 = LinuxSandboxAdaptation.networkProcFileContents("net/tcp6") ?? ""
+        let udp = LinuxSandboxAdaptation.networkProcFileContents("net/udp") ?? ""
+        let udp6 = LinuxSandboxAdaptation.networkProcFileContents("net/udp6") ?? ""
         return Self.parseLinuxVisibleSocketsFromProc(
             tcpText: tcp,
             tcp6Text: tcp6,
@@ -883,8 +895,9 @@ public struct SystemMetricCollector: MetricCollecting {
 
     private func linuxBuildSocketInodeOwnerMap() -> [UInt64: (pid: Int, processName: String)] {
         #if os(Linux)
-        // Building this map walks every process FD table; cache briefly to avoid hammering /proc.
-        // Synchronous access is OK here because visible socket collection already runs off the UI thread.
+        if LinuxSandboxAdaptation.isFlatpak {
+            return [:]
+        }
         if let cached = LinuxSocketInodeCache.shared.cachedIfFresh() {
             return cached
         }
@@ -896,8 +909,11 @@ public struct SystemMetricCollector: MetricCollecting {
             return map
         }
 
+        var scanned = 0
         for entry in entries {
             guard let pid = Int(entry), pid > 0 else { continue }
+            scanned += 1
+            if scanned > 512 { break }
             let commPath = "\(procRoot)/\(pid)/comm"
             let comm = ((try? String(contentsOfFile: commPath, encoding: .utf8))?
                 .trimmingCharacters(in: .whitespacesAndNewlines))
@@ -924,6 +940,25 @@ public struct SystemMetricCollector: MetricCollecting {
 
     private static func linuxLogSocketProbe(_ message: String) {
         let line = "[SystemInsights] socket probe: \(message)\n"
+        FileHandle.standardError.write(Data(line.utf8))
+    }
+
+    private static var loggedLinuxNetworkProof = false
+
+    private static func logLinuxNetworkProofOnce(
+        interface: String,
+        receivedTotal: Double,
+        sentTotal: Double,
+        receivedRate: Double,
+        sentRate: Double
+    ) {
+        guard !loggedLinuxNetworkProof else { return }
+        loggedLinuxNetworkProof = true
+        let scale = LinuxNetworkProof.counterScale(receivedByteTotal: receivedTotal).rawValue
+        let line = """
+        [SystemInsights] network proof: iface=\(interface) rx_total=\(Int(receivedTotal)) tx_total=\(Int(sentTotal)) scale=\(scale) rate_rx=\(Int(receivedRate)) rate_tx=\(Int(sentRate)) source=networkProcFileContents
+
+        """
         FileHandle.standardError.write(Data(line.utf8))
     }
     #endif
@@ -1229,8 +1264,18 @@ private actor LinuxNetworkRateTracker {
         }
 
         let interval = max(durationSeconds(from: prior.sampledAt, to: now), 0.5)
-        let rawReceived = byteRate(from: prior.received, to: received, interval: interval)
-        let rawSent = byteRate(from: prior.sent, to: sent, interval: interval)
+        let rawReceived = byteRate(
+            from: prior.received,
+            to: received,
+            interval: interval,
+            fallback: prior.smoothedReceived
+        )
+        let rawSent = byteRate(
+            from: prior.sent,
+            to: sent,
+            interval: interval,
+            fallback: prior.smoothedSent
+        )
         let alpha = 0.35
         let smoothedReceived = alpha * rawReceived + (1 - alpha) * prior.smoothedReceived
         let smoothedSent = alpha * rawSent + (1 - alpha) * prior.smoothedSent
@@ -1250,8 +1295,8 @@ private actor LinuxNetworkRateTracker {
         return max(Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18, 0.001)
     }
 
-    private func byteRate(from first: Double, to second: Double, interval: TimeInterval) -> Double {
-        guard second >= first else { return 0 }
+    private func byteRate(from first: Double, to second: Double, interval: TimeInterval, fallback: Double) -> Double {
+        guard second >= first else { return fallback }
         return ((second - first) / interval).rounded()
     }
 }

@@ -36,16 +36,14 @@ actor DashboardSamplingScheduler {
 
                 await DashboardSamplingWorkload.refreshLiveNetwork()
 
-                if await DashboardSamplingGate.canPollSockets() {
-                    if tick.isMultiple(of: 3) {
-                        await DashboardSamplingWorkload.refreshSockets()
-                    }
-                    if tick.isMultiple(of: 15), tick > 0 {
-                        await DashboardSamplingWorkload.refreshTelemetry()
-                    }
-                    if tick.isMultiple(of: 300), tick > 0 {
-                        await DashboardSamplingScheduler.shared.requestPeriodicSnapshot()
-                    }
+                if await DashboardSamplingGate.canPollSockets(), tick >= 3, tick.isMultiple(of: 3) {
+                    await DashboardSamplingWorkload.refreshSockets()
+                }
+                if await DashboardSamplingGate.canPollSockets(), tick.isMultiple(of: 15), tick > 0 {
+                    await DashboardSamplingWorkload.refreshTelemetry()
+                }
+                if await DashboardSamplingGate.canPollSockets(), tick.isMultiple(of: 300), tick > 0 {
+                    await DashboardSamplingScheduler.shared.requestPeriodicSnapshot()
                 }
 
                 tick += 1
