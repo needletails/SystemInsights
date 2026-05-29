@@ -14,12 +14,14 @@ final class DashboardViewModel {
     var statusMessage = ""
     var showStatusBanner = false
 
-    private var recentActivity: [NetworkActivityEvent] = []
-    private var liveNetwork: NetworkMetrics?
-    private var liveNetworkSamples: [NetworkMetrics] = []
-    private var visibleSockets: [VisibleSocket] = []
-    private var lastSocketSampleAt: Date?
-    private var previousConnections: [String: VisibleSocket]?
+    private(set) var recentActivity: [NetworkActivityEvent] = []
+    private(set) var liveNetwork: NetworkMetrics?
+    private(set) var liveNetworkSamples: [NetworkMetrics] = []
+    private(set) var visibleSockets: [VisibleSocket] = []
+    private(set) var socketSearchIndex: [SocketConsoleFilter.IndexEntry] = []
+    private(set) var lastSocketSampleAt: Date?
+    private(set) var lastSocketFingerprint: UInt64?
+    private(set) var previousConnections: [String: VisibleSocket]?
 
     private var delayedBootstrap: (() -> Void)?
     var onCollectComplete: (() -> Void)?
@@ -121,7 +123,13 @@ final class DashboardViewModel {
             visibleSockets = socketUpdate.connections
             recentActivity = socketUpdate.recentActivity
             previousConnections = socketUpdate.previousConnections
+            socketSearchIndex = socketUpdate.index
+            lastSocketFingerprint = socketUpdate.fingerprint
             lastSocketSampleAt = Date()
+        } else {
+            visibleSockets = []
+            socketSearchIndex = []
+            lastSocketFingerprint = VisibleSocketSampling.fingerprint([])
         }
         liveNetwork = collectedSnapshot.metrics.network
         liveNetworkSamples = [collectedSnapshot.metrics.network]
@@ -199,6 +207,9 @@ final class DashboardViewModel {
                 visibleSockets = socketUpdate.connections
                 recentActivity = socketUpdate.recentActivity
                 lastSocketSampleAt = Date()
+                socketSearchIndex = socketUpdate.index
+                lastSocketFingerprint = socketUpdate.fingerprint
+                previousConnections = socketUpdate.previousConnections
             }
             notifyUI()
             liveNetwork = baseSnapshot.metrics.network
@@ -229,6 +240,30 @@ final class DashboardViewModel {
             showStatusBanner = true
             notifyUI()
         }
+    }
+
+    func applyLiveSocketUpdate(_ update: DashboardSamplingPipeline.SocketUIUpdate) {
+        lastSocketFingerprint = update.fingerprint
+        previousConnections = update.previousConnections
+        visibleSockets = update.connections
+        socketSearchIndex = update.index
+        recentActivity = update.recentActivity
+        lastSocketSampleAt = Date()
+        notifyUI()
+    }
+
+    func applyLiveNetwork(_ network: NetworkMetrics, samples: [NetworkMetrics]) {
+        liveNetwork = network
+        liveNetworkSamples = samples
+        notifyUI()
+    }
+
+    func applyTelemetrySnapshot(_ refreshedSnapshot: InsightSnapshot) {
+        snapshot = refreshedSnapshot
+        if liveNetwork == nil {
+            liveNetwork = refreshedSnapshot.metrics.network
+        }
+        notifyUI()
     }
 
     func prepareCacheSessionIfNeeded() {

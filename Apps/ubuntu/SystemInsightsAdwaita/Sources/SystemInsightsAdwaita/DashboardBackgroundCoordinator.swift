@@ -1,3 +1,4 @@
+import Adwaita
 import Foundation
 import SystemInsightCore
 
@@ -53,6 +54,20 @@ final class DashboardBackgroundCoordinator {
         canWork: @escaping @MainActor () -> Bool,
         work: @escaping @Sendable () async -> Void
     ) -> Task<Void, Never> {
+        #if os(Linux)
+        return Task.detached(priority: .utility) {
+            while !Task.isCancelled {
+                let allowed = await UIViewDeferral.readOnMain { canWork() }
+                guard allowed else {
+                    try? await Task.sleep(for: .milliseconds(400))
+                    continue
+                }
+                await work()
+                guard !Task.isCancelled else { return }
+                try? await Task.sleep(for: interval)
+            }
+        }
+        #else
         Task {
             while !Task.isCancelled {
                 while await MainActor.run(body: { !canWork() }) {
@@ -75,5 +90,6 @@ final class DashboardBackgroundCoordinator {
                 }
             }
         }
+        #endif
     }
 }

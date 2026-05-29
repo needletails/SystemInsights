@@ -5,6 +5,24 @@ import Foundation
 /// Use for handlers wired from GTK signals (`entry-activated`, `clicked`, `notify::text` setters, etc.)
 /// so `@State` / `@Binding` writes do not call `getState()` re-entrantly.
 enum UIViewDeferral {
+    /// Reads MainActor state on the GTK main loop (Linux) or the dispatch queue (macOS).
+    static func readOnMain<T: Sendable>(_ work: @escaping @MainActor () -> T) async -> T {
+        #if os(Linux)
+        await withCheckedContinuation { continuation in
+            Idle {
+                let value = MainActor.assumeIsolated {
+                    work()
+                }
+                continuation.resume(returning: value)
+            }
+        }
+        #else
+        await MainActor.run {
+            work()
+        }
+        #endif
+    }
+
     /// Preferred entry point for GTK signal handlers and button actions.
     nonisolated static func run(_ work: @escaping () -> Void) {
         let deferred = DeferredUIAction(work)

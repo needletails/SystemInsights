@@ -58,6 +58,7 @@ struct DashboardView: @preconcurrency View {
     var view: Body {
         let _ = {
             model.bind(renderState: renderState)
+            syncViewStateFromModel()
             return renderState.generation
         }()
         OperationsRoot(onFirstAppear: performLaunchBootstrap) {
@@ -69,6 +70,14 @@ struct DashboardView: @preconcurrency View {
         snapshot = model.snapshot
         statusMessage = model.statusMessage
         showStatusBanner = model.showStatusBanner
+        recentActivity = model.recentActivity
+        liveNetwork = model.liveNetwork
+        liveNetworkSamples = model.liveNetworkSamples
+        visibleSockets = model.visibleSockets
+        socketSearchIndex = model.socketSearchIndex
+        lastSocketSampleAt = model.lastSocketSampleAt
+        previousConnections = model.previousConnections
+        lastSocketFingerprint = model.lastSocketFingerprint
     }
 
     @ViewBuilder
@@ -227,26 +236,32 @@ struct DashboardView: @preconcurrency View {
     @ViewBuilder
     private var dashboardMainContent: Body {
         if let snapshot = model.snapshot ?? snapshot {
+            let network = model.liveNetwork ?? liveNetwork ?? snapshot.metrics.network
+            let speedSamples = model.liveNetworkSamples.isEmpty
+                ? (liveNetworkSamples.isEmpty ? [network] : liveNetworkSamples)
+                : model.liveNetworkSamples
+            let sockets = model.visibleSockets.isEmpty ? visibleSockets : model.visibleSockets
+            let socketIndex = model.socketSearchIndex.isEmpty ? socketSearchIndex : model.socketSearchIndex
+            let activity = model.recentActivity.isEmpty ? recentActivity : model.recentActivity
+            let socketSampleAt = model.lastSocketSampleAt ?? lastSocketSampleAt
             ScrollView {
                 VStack {
                     releaseUpdateBanner
-                    if showStatusBanner, !statusMessage.isEmpty {
+                    if showStatusBanner || model.showStatusBanner, !(model.statusMessage.isEmpty && statusMessage.isEmpty) {
                         DashboardStatusBanner(
-                            message: statusMessage,
+                            message: model.statusMessage.isEmpty ? statusMessage : model.statusMessage,
                             visible: true,
                             onDismiss: dismissStatus
                         )
                     }
-                    let network = liveNetwork ?? snapshot.metrics.network
-                    let speedSamples = liveNetworkSamples.isEmpty ? [network] : liveNetworkSamples
                     DashboardOperationsPage(
                         snapshot: snapshot,
                         network: network,
                         speedSamples: speedSamples,
-                        visibleSockets: visibleSockets,
-                        socketSearchIndex: socketSearchIndex,
-                        recentActivity: recentActivity,
-                        lastSocketSampleAt: lastSocketSampleAt,
+                        visibleSockets: sockets,
+                        socketSearchIndex: socketIndex,
+                        recentActivity: activity,
+                        lastSocketSampleAt: socketSampleAt,
                         isCollecting: model.isCollecting,
                         onScan: collectSnapshot,
                         onSelectSocket: { presentInspector(.socket($0)) },
@@ -531,14 +546,14 @@ struct DashboardView: @preconcurrency View {
     }
 
     private func refreshTelemetryAsync() async {
-        guard security.isUnlocked, !isRefreshingTelemetry, let currentSnapshot = snapshot else {
+        guard security.isUnlocked, !isRefreshingTelemetry, let currentSnapshot = model.snapshot ?? snapshot else {
             return
         }
         isRefreshingTelemetry = true
         defer { isRefreshingTelemetry = false }
 
         do {
-            let activitySnapshot = recentActivity
+            let activitySnapshot = model.recentActivity.isEmpty ? recentActivity : model.recentActivity
             let refreshedSnapshot = try await Task.detached {
                 let refreshedMetrics = try await NetworkSamplingService.shared.collectMetrics()
                 return DashboardSamplingPipeline.buildTelemetrySnapshot(
@@ -558,9 +573,12 @@ struct DashboardView: @preconcurrency View {
         isRefreshingLiveNetwork = true
         defer { isRefreshingLiveNetwork = false }
 
-        let baseline = await MainActor.run { snapshot?.metrics.network ?? .unavailable }
-        let establishedCount = await MainActor.run {
-            visibleSockets.filter { $0.state == .established }.count
+        let baseline = await UIViewDeferral.readOnMain {
+            (model.liveNetwork ?? liveNetwork ?? model.snapshot?.metrics.network ?? snapshot?.metrics.network) ?? .unavailable
+        }
+        let establishedCount = await UIViewDeferral.readOnMain {
+            let sockets = model.visibleSockets.isEmpty ? visibleSockets : model.visibleSockets
+            return sockets.filter { $0.state == .established }.count
         }
         do {
             let network = try await DashboardSamplingPipeline.pollLiveNetwork(
@@ -578,9 +596,12 @@ struct DashboardView: @preconcurrency View {
         isRefreshingSockets = true
         defer { isRefreshingSockets = false }
 
-        let baseline = await MainActor.run { snapshot?.metrics.network ?? .unavailable }
-        let establishedCount = await MainActor.run {
-            visibleSockets.filter { $0.state == .established }.count
+        let baseline = await UIViewDeferral.readOnMain {
+            (model.liveNetwork ?? liveNetwork ?? model.snapshot?.metrics.network ?? snapshot?.metrics.network) ?? .unavailable
+        }
+        let establishedCount = await UIViewDeferral.readOnMain {
+            let sockets = model.visibleSockets.isEmpty ? visibleSockets : model.visibleSockets
+            return sockets.filter { $0.state == .established }.count
         }
         do {
             let sample = try await DashboardSamplingPipeline.pollNetwork(
@@ -590,9 +611,15 @@ struct DashboardView: @preconcurrency View {
             applyNetworkSample(sample.network)
             lastSocketSampleAt = Date()
 
-            let fingerprintSnapshot = await MainActor.run { lastSocketFingerprint }
-            let previousConnectionsSnapshot = await MainActor.run { previousConnections }
-            let activitySnapshot = await MainActor.run { recentActivity }
+            let fingerprintSnapshot = await UIViewDeferral.readOnMain {
+                model.lastSocketFingerprint ?? lastSocketFingerprint
+            }
+            let previousConnectionsSnapshot = await UIViewDeferral.readOnMain {
+                model.previousConnections ?? previousConnections
+            }
+            let activitySnapshot = await UIViewDeferral.readOnMain {
+                model.recentActivity.isEmpty ? recentActivity : model.recentActivity
+            }
             let socketUpdate = await Task.detached {
                 DashboardSamplingPipeline.prepareSocketUIUpdate(
                     connections: sample.connections,
@@ -611,10 +638,8 @@ struct DashboardView: @preconcurrency View {
 
     private func applyTelemetrySnapshot(_ refreshedSnapshot: InsightSnapshot) {
         UIViewDeferral.run {
-            snapshot = refreshedSnapshot
-            if liveNetwork == nil {
-                liveNetwork = refreshedSnapshot.metrics.network
-            }
+            model.applyTelemetrySnapshot(refreshedSnapshot)
+            syncViewStateFromModel()
         }
     }
 
@@ -634,11 +659,16 @@ struct DashboardView: @preconcurrency View {
             )
         }
         UIViewDeferral.run {
-            lastSocketFingerprint = fingerprint
-            previousConnections = previous
-            visibleSockets = connections
-            socketSearchIndex = index
-            recentActivity = activity
+            model.applyLiveSocketUpdate(
+                DashboardSamplingPipeline.SocketUIUpdate(
+                    connections: connections,
+                    fingerprint: fingerprint,
+                    index: index,
+                    recentActivity: activity,
+                    previousConnections: previous
+                )
+            )
+            syncViewStateFromModel()
         }
     }
 
@@ -651,23 +681,25 @@ struct DashboardView: @preconcurrency View {
 
     private func applyNetworkSample(_ network: NetworkMetrics) {
         UIViewDeferral.run {
-            liveNetwork = network
-            if shouldAppendLiveNetworkSample(network) {
-                liveNetworkSamples.append(network)
+            var samples = model.liveNetworkSamples.isEmpty ? liveNetworkSamples : model.liveNetworkSamples
+            if shouldAppendLiveNetworkSample(network, samples: samples) {
+                samples.append(network)
                 lastGraphSampleAt = Date()
-                if liveNetworkSamples.count > NetworkSamplingLimits.maxLiveNetworkSamples {
-                    liveNetworkSamples.removeFirst(liveNetworkSamples.count - NetworkSamplingLimits.maxLiveNetworkSamples)
+                if samples.count > NetworkSamplingLimits.maxLiveNetworkSamples {
+                    samples.removeFirst(samples.count - NetworkSamplingLimits.maxLiveNetworkSamples)
                 }
             }
+            model.applyLiveNetwork(network, samples: samples)
+            syncViewStateFromModel()
         }
     }
 
-    private func shouldAppendLiveNetworkSample(_ network: NetworkMetrics) -> Bool {
+    private func shouldAppendLiveNetworkSample(_ network: NetworkMetrics, samples: [NetworkMetrics]) -> Bool {
         let now = Date()
         if let lastGraphSampleAt, now.timeIntervalSince(lastGraphSampleAt) >= 2 {
             return true
         }
-        guard let last = liveNetworkSamples.last else { return true }
+        guard let last = samples.last else { return true }
         let ratesChanged = abs(last.receivedBytesPerSecond - network.receivedBytesPerSecond) >= 256
             || abs(last.sentBytesPerSecond - network.sentBytesPerSecond) >= 256
         let contextChanged = last.interfaceName != network.interfaceName

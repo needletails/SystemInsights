@@ -221,18 +221,10 @@ public struct SystemMetricCollector: MetricCollecting {
         }
         return Self.parseMacOSVisibleTCPConnections(output.stdout)
         #elseif os(Linux)
-        let executable = LinuxSandboxAdaptation.firstExecutable([
-            "/usr/sbin/ss", "/usr/bin/ss", "/bin/ss"
-        ])
-        guard let executable,
-              let output = CommandRunner.run(
-                executable,
-                arguments: ["-H", "-t", "-n", "-a", "-p"],
-                timeout: 2
-              ), output.exitCode == 0 else {
-            return []
+        if let viaSS = linuxCollectVisibleTCPViaSS(), !viaSS.isEmpty {
+            return viaSS
         }
-        return Self.parseLinuxVisibleTCPConnections(output.stdout)
+        return linuxCollectVisibleTCPViaProc()
         #else
         return []
         #endif
@@ -249,24 +241,14 @@ public struct SystemMetricCollector: MetricCollecting {
         }
         return Self.parseMacOSVisibleSockets(output.stdout)
         #elseif os(Linux)
-        let executable = LinuxSandboxAdaptation.firstExecutable([
-            "/usr/sbin/ss", "/usr/bin/ss", "/bin/ss"
-        ])
-        guard let executable else { return [] }
-        let tcpOutput = CommandRunner.run(
-            executable,
-            arguments: ["-H", "-t", "-n", "-a", "-p"],
-            timeout: 2
-        )
-        let udpOutput = CommandRunner.run(
-            executable,
-            arguments: ["-H", "-u", "-n", "-a", "-p"],
-            timeout: 2
-        )
-        return Self.parseLinuxVisibleSockets(
-            tcpText: tcpOutput?.exitCode == 0 ? tcpOutput?.stdout ?? "" : "",
-            udpText: udpOutput?.exitCode == 0 ? udpOutput?.stdout ?? "" : ""
-        )
+        let viaSS = linuxCollectVisibleSocketsViaSS()
+        if !viaSS.isEmpty {
+            Self.linuxLogSocketProbe("ss returned \(viaSS.count) sockets")
+            return viaSS
+        }
+        let viaProc = linuxCollectVisibleSocketsViaProc()
+        Self.linuxLogSocketProbe("proc fallback returned \(viaProc.count) sockets")
+        return viaProc
         #else
         return await collectVisibleTCPConnections()
         #endif
@@ -768,6 +750,80 @@ public struct SystemMetricCollector: MetricCollecting {
             detail: "No active Linux tunnel interface was detected."
         )
     }
+
+    private func linuxCollectVisibleSocketsViaSS() -> [VisibleSocket] {
+        guard let executable = LinuxSandboxAdaptation.firstExecutable([
+            "/usr/sbin/ss", "/usr/bin/ss", "/bin/ss"
+        ]) else {
+            Self.linuxLogSocketProbe("ss executable not found")
+            return []
+        }
+        let tcpOutput = CommandRunner.run(
+            executable,
+            arguments: ["-H", "-t", "-n", "-a", "-p"],
+            timeout: 3
+        )
+        let udpOutput = CommandRunner.run(
+            executable,
+            arguments: ["-H", "-u", "-n", "-a", "-p"],
+            timeout: 3
+        )
+        if tcpOutput == nil && udpOutput == nil {
+            Self.linuxLogSocketProbe("ss produced no output")
+            return []
+        }
+        if tcpOutput?.exitCode != 0 || udpOutput?.exitCode != 0 {
+            Self.linuxLogSocketProbe(
+                "ss exit tcp=\(tcpOutput?.exitCode ?? -1) udp=\(udpOutput?.exitCode ?? -1) stderr=\(tcpOutput?.stderr.prefix(120) ?? udpOutput?.stderr.prefix(120) ?? "")"
+            )
+        }
+        return Self.parseLinuxVisibleSockets(
+            tcpText: tcpOutput?.exitCode == 0 ? tcpOutput?.stdout ?? "" : "",
+            udpText: udpOutput?.exitCode == 0 ? udpOutput?.stdout ?? "" : ""
+        )
+    }
+
+    private func linuxCollectVisibleTCPViaSS() -> [VisibleSocket]? {
+        guard let executable = LinuxSandboxAdaptation.firstExecutable([
+            "/usr/sbin/ss", "/usr/bin/ss", "/bin/ss"
+        ]) else {
+            return nil
+        }
+        guard let output = CommandRunner.run(
+            executable,
+            arguments: ["-H", "-t", "-n", "-a", "-p"],
+            timeout: 3
+        ), output.exitCode == 0 else {
+            return nil
+        }
+        let parsed = Self.parseLinuxVisibleTCPConnections(output.stdout)
+        return parsed.isEmpty ? nil : parsed
+    }
+
+    private func linuxCollectVisibleSocketsViaProc() -> [VisibleSocket] {
+        let tcp = LinuxSandboxAdaptation.procFileContents("net/tcp") ?? ""
+        let tcp6 = LinuxSandboxAdaptation.procFileContents("net/tcp6") ?? ""
+        let udp = LinuxSandboxAdaptation.procFileContents("net/udp") ?? ""
+        let udp6 = LinuxSandboxAdaptation.procFileContents("net/udp6") ?? ""
+        return Self.parseLinuxVisibleSocketsFromProc(
+            tcpText: tcp,
+            tcp6Text: tcp6,
+            udpText: udp,
+            udp6Text: udp6
+        )
+    }
+
+    private func linuxCollectVisibleTCPViaProc() -> [VisibleSocket] {
+        let tcp = LinuxSandboxAdaptation.procFileContents("net/tcp") ?? ""
+        let tcp6 = LinuxSandboxAdaptation.procFileContents("net/tcp6") ?? ""
+        return Self.parseLinuxVisibleSocketsFromProc(tcpText: tcp, tcp6Text: tcp6, udpText: "", udp6Text: "")
+            .filter { $0.transport == .tcp }
+    }
+
+    private static func linuxLogSocketProbe(_ message: String) {
+        let line = "[SystemInsights] socket probe: \(message)\n"
+        FileHandle.standardError.write(Data(line.utf8))
+    }
     #endif
 
     private func percentages(in text: String) -> [Double] {
@@ -869,6 +925,115 @@ public struct SystemMetricCollector: MetricCollecting {
 
     static func parseLinuxVisibleSockets(tcpText: String, udpText: String) -> [VisibleSocket] {
         parseLinuxVisibleTCPConnections(tcpText) + parseLinuxVisibleUDPSockets(udpText)
+    }
+
+    static func parseLinuxVisibleSocketsFromProc(
+        tcpText: String,
+        tcp6Text: String,
+        udpText: String,
+        udp6Text: String
+    ) -> [VisibleSocket] {
+        var connections: [String: VisibleSocket] = [:]
+
+        func appendTCP(from text: String, ipv6: Bool) {
+            for line in text.split(whereSeparator: \.isNewline).dropFirst().map(String.init) {
+                let fields = line.split(whereSeparator: \.isWhitespace).map(String.init)
+                guard fields.count > 3 else { continue }
+                let state: VisibleSocketState
+                switch fields[3].uppercased() {
+                case "01": state = .established
+                case "0A": state = .listening
+                default: continue
+                }
+                guard let local = parseProcNetEndpoint(fields[1], ipv6: ipv6) else { continue }
+                let remote = parseProcNetEndpoint(fields[2], ipv6: ipv6)
+                let remoteEndpoint: String?
+                if state == .established, let remote, !isWildcardPeer(remote) {
+                    remoteEndpoint = remote
+                } else {
+                    remoteEndpoint = nil
+                }
+                let connection = VisibleSocket(
+                    processName: "unattributed",
+                    pid: 0,
+                    localEndpoint: local,
+                    remoteEndpoint: remoteEndpoint,
+                    state: state
+                )
+                connections[connection.id] = connection
+            }
+        }
+
+        func appendUDP(from text: String, ipv6: Bool) {
+            for line in text.split(whereSeparator: \.isNewline).dropFirst().map(String.init) {
+                let fields = line.split(whereSeparator: \.isWhitespace).map(String.init)
+                guard fields.count > 3 else { continue }
+                guard let local = parseProcNetEndpoint(fields[1], ipv6: ipv6) else { continue }
+                let remote = parseProcNetEndpoint(fields[2], ipv6: ipv6)
+                let remoteEndpoint = remote.flatMap { isWildcardPeer($0) ? nil : $0 }
+                let socket = VisibleSocket(
+                    transport: .udp,
+                    processName: "unattributed",
+                    pid: 0,
+                    localEndpoint: local,
+                    remoteEndpoint: remoteEndpoint,
+                    state: .datagram
+                )
+                connections[socket.id] = socket
+            }
+        }
+
+        appendTCP(from: tcpText, ipv6: false)
+        appendTCP(from: tcp6Text, ipv6: true)
+        appendUDP(from: udpText, ipv6: false)
+        appendUDP(from: udp6Text, ipv6: true)
+
+        return connections.values.sorted {
+            if $0.transport != $1.transport {
+                return $0.transport == .tcp
+            }
+            if $0.state != $1.state {
+                return $0.state == .established || ($0.state == .listening && $1.state == .datagram)
+            }
+            return $0.localEndpoint < $1.localEndpoint
+        }
+        .prefix(NetworkSamplingLimits.maxVisibleSockets)
+        .map { $0 }
+    }
+
+    private static func parseProcNetEndpoint(_ value: String, ipv6: Bool) -> String? {
+        let parts = value.split(separator: ":", maxSplits: 1).map(String.init)
+        guard parts.count == 2, let port = UInt16(parts[1], radix: 16) else { return nil }
+        let addrHex = parts[0]
+        if ipv6 {
+            guard addrHex.count == 32 else { return nil }
+            var segments: [String] = []
+            var index = addrHex.startIndex
+            for _ in 0..<4 {
+                let wordEnd = addrHex.index(index, offsetBy: 8)
+                let word = String(addrHex[index..<wordEnd])
+                var wordIndex = word.startIndex
+                var bytes: [String] = []
+                for _ in 0..<4 {
+                    let byteEnd = word.index(wordIndex, offsetBy: 2)
+                    bytes.append(String(word[wordIndex..<byteEnd]))
+                    wordIndex = byteEnd
+                }
+                segments.append(contentsOf: bytes.reversed())
+                index = wordEnd
+            }
+            return "[\(segments.joined(separator: ":"))]:\(port)"
+        }
+        guard addrHex.count == 8 else { return nil }
+        var bytes: [UInt8] = []
+        var index = addrHex.startIndex
+        for _ in 0..<4 {
+            let next = addrHex.index(index, offsetBy: 2)
+            guard let byte = UInt8(addrHex[index..<next], radix: 16) else { return nil }
+            bytes.append(byte)
+            index = next
+        }
+        return "\(bytes[3]).\(bytes[2]).\(bytes[1]).\(bytes[0]):\(port)"
     }
 
     private static func isWildcardPeer(_ endpoint: String) -> Bool {
