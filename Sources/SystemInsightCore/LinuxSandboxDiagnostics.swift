@@ -24,13 +24,23 @@ public enum LinuxSandboxDiagnostics: Sendable {
     }
 
     public static func probeDiskUsagePercent() -> Double? {
-        if let usage = diskUsageFromFileSystem(at: LinuxSandboxAdaptation.diskUsagePath) {
+        let diskPath = LinuxSandboxAdaptation.diskUsagePath
+        let homePath = FileManager.default.homeDirectoryForCurrentUser.path
+
+        if !(LinuxSandboxAdaptation.isFlatpak && diskPath == homePath),
+           let usage = LinuxSandboxAdaptation.fileSystemUsagePercent(at: diskPath) {
             return usage
         }
         if LinuxSandboxAdaptation.isFlatpak, let usage = diskUsageFromDF() {
             return usage
         }
-        return diskUsageFromFileSystem(at: FileManager.default.homeDirectoryForCurrentUser.path)
+        if let usage = LinuxSandboxAdaptation.fileSystemUsagePercent(at: diskPath) {
+            return usage
+        }
+        if diskPath != homePath {
+            return LinuxSandboxAdaptation.fileSystemUsagePercent(at: homePath)
+        }
+        return nil
     }
 
     private static func cacheDirectoryIsWritable() -> Bool {
@@ -48,18 +58,6 @@ public enum LinuxSandboxDiagnostics: Sendable {
         } catch {
             return false
         }
-    }
-
-    private static func diskUsageFromFileSystem(at path: String) -> Double? {
-        guard
-            let attributes = try? FileManager.default.attributesOfFileSystem(forPath: path),
-            let size = (attributes[.systemSize] as? NSNumber)?.doubleValue,
-            let free = (attributes[.systemFreeSize] as? NSNumber)?.doubleValue,
-            size > 0
-        else {
-            return nil
-        }
-        return ((size - free) / size * 100).rounded()
     }
 
     private static func diskUsageFromDF() -> Double? {
@@ -80,7 +78,7 @@ public enum LinuxSandboxDiagnostics: Sendable {
         guard fields.count >= 5 else { return nil }
         let capacity = fields[4].replacingOccurrences(of: "%", with: "")
         guard let usage = Double(capacity) else { return nil }
-        return usage
+        return LinuxSandboxAdaptation.isUsableDiskUsagePercent(usage) ? usage : nil
     }
 }
 #endif

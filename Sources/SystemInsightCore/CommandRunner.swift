@@ -187,6 +187,39 @@ enum LinuxSandboxAdaptation {
         #endif
     }
 
+    static func procFileContents(_ relativePath: String) -> String? {
+        let trimmed = relativePath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let hostMountedPath = "/run/host/proc/\(trimmed)"
+        if FileManager.default.fileExists(atPath: hostMountedPath),
+           let contents = try? String(contentsOfFile: hostMountedPath, encoding: .utf8) {
+            return contents
+        }
+
+        #if os(Linux)
+        if isFlatpak, let contents = flatpakHostTextFile("/proc/\(trimmed)") {
+            return contents
+        }
+        #endif
+
+        let sandboxPath = "/proc/\(trimmed)"
+        return try? String(contentsOfFile: sandboxPath, encoding: .utf8)
+    }
+
+    private static func flatpakHostTextFile(_ path: String) -> String? {
+        #if os(Linux)
+        guard isFlatpak, let cat = firstExecutable(["/bin/cat", "/usr/bin/cat"]) else {
+            return nil
+        }
+        guard let output = CommandRunner.run(cat, arguments: [path], timeout: 2),
+              output.exitCode == 0 else {
+            return nil
+        }
+        return output.stdout
+        #else
+        return nil
+        #endif
+    }
+
     /// Resolve an executable path, preferring the host copy under `/run/host` when present.
     static func resolveExecutable(_ executable: String) -> String {
         #if os(Linux)
@@ -236,9 +269,35 @@ enum LinuxSandboxAdaptation {
         guard let spawn = spawnCandidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
             return (resolved, arguments)
         }
-        return (spawn, ["--host", resolved] + arguments)
+        return (spawn, ["--host", hostExecutablePath(for: resolved)] + arguments)
         #else
         return (executable, arguments)
         #endif
+    }
+
+    static func hostExecutablePath(for resolvedExecutable: String) -> String {
+        let hostPrefix = "/run/host"
+        guard resolvedExecutable.hasPrefix("\(hostPrefix)/") else {
+            return resolvedExecutable
+        }
+        let stripped = resolvedExecutable.dropFirst(hostPrefix.count)
+        return stripped.isEmpty ? "/" : String(stripped)
+    }
+
+    static func fileSystemUsagePercent(at path: String) -> Double? {
+        guard
+            let attributes = try? FileManager.default.attributesOfFileSystem(forPath: path),
+            let size = (attributes[.systemSize] as? NSNumber)?.doubleValue,
+            let free = (attributes[.systemFreeSize] as? NSNumber)?.doubleValue,
+            size > 0
+        else {
+            return nil
+        }
+        let usage = ((size - free) / size * 100).rounded()
+        return isUsableDiskUsagePercent(usage) ? usage : nil
+    }
+
+    static func isUsableDiskUsagePercent(_ usage: Double) -> Bool {
+        usage.isFinite && usage > 0 && usage <= 100
     }
 }

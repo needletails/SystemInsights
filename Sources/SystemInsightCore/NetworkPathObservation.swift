@@ -103,7 +103,7 @@ public actor NetworkPathObservationService {
             monitor.cancel()
         }
 
-        await completePathMonitor()
+        completePathMonitor()
     }
 
     private func completePathMonitor() {

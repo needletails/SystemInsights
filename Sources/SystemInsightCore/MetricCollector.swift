@@ -617,9 +617,8 @@ public struct SystemMetricCollector: MetricCollecting {
     }
 
     private func linuxCPUCounters() -> (total: Double, idle: Double)? {
-        let statPath = "\(LinuxSandboxAdaptation.procDirectory)/stat"
         guard
-            let contents = try? String(contentsOfFile: statPath, encoding: .utf8),
+            let contents = LinuxSandboxAdaptation.procFileContents("stat"),
             let cpuLine = contents.split(whereSeparator: \.isNewline).first
         else {
             return nil
@@ -631,8 +630,7 @@ public struct SystemMetricCollector: MetricCollecting {
     }
 
     private func linuxMemoryPressure() -> Double {
-        let meminfoPath = "\(LinuxSandboxAdaptation.procDirectory)/meminfo"
-        guard let contents = try? String(contentsOfFile: meminfoPath, encoding: .utf8) else {
+        guard let contents = LinuxSandboxAdaptation.procFileContents("meminfo") else {
             return 0
         }
 
@@ -671,8 +669,7 @@ public struct SystemMetricCollector: MetricCollecting {
     }
 
     private func linuxDefaultInterface() -> String? {
-        let routePath = "\(LinuxSandboxAdaptation.procDirectory)/net/route"
-        guard let contents = try? String(contentsOfFile: routePath, encoding: .utf8) else {
+        guard let contents = LinuxSandboxAdaptation.procFileContents("net/route") else {
             return nil
         }
         return contents.split(whereSeparator: \.isNewline).dropFirst().compactMap { (line: Substring) -> String? in
@@ -683,8 +680,7 @@ public struct SystemMetricCollector: MetricCollecting {
     }
 
     private func linuxNetworkCounters(for interface: String) -> (received: Double, sent: Double)? {
-        let devPath = "\(LinuxSandboxAdaptation.procDirectory)/net/dev"
-        guard let contents = try? String(contentsOfFile: devPath, encoding: .utf8) else {
+        guard let contents = LinuxSandboxAdaptation.procFileContents("net/dev") else {
             return nil
         }
         for line in contents.split(whereSeparator: \.isNewline) {
@@ -701,9 +697,8 @@ public struct SystemMetricCollector: MetricCollecting {
     }
 
     private func linuxActiveTCPConnections() -> Int {
-        let procNet = "\(LinuxSandboxAdaptation.procDirectory)/net"
-        return ["\(procNet)/tcp", "\(procNet)/tcp6"].reduce(0) { count, path in
-            guard let contents = try? String(contentsOfFile: path, encoding: .utf8) else { return count }
+        ["net/tcp", "net/tcp6"].reduce(0) { count, path in
+            guard let contents = LinuxSandboxAdaptation.procFileContents(path) else { return count }
             let established = contents.split(whereSeparator: \.isNewline).dropFirst().filter { line in
                 let fields = line.split(whereSeparator: \.isWhitespace)
                 return fields.count > 3 && fields[3] == "01"

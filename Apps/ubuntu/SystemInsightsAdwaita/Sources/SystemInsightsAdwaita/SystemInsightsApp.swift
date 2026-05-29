@@ -5,9 +5,13 @@ import SystemInsightCore
 @main
 @MainActor
 struct SystemInsightsApp: @preconcurrency App {
-    var app = AdwaitaApp(id: "com.needletails.systeminsights")
+    var app: AdwaitaApp
 
     init() {
+        #if os(Linux)
+        LinuxRuntimeEnvironment.configureBeforeAppLaunch()
+        #endif
+        app = AdwaitaApp(id: "com.needletails.systeminsights")
         SystemInsightsLogging.bootstrapIfNeeded()
         #if os(Linux)
         DashboardCollectDiagnostics.log("app init")
