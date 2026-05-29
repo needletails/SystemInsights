@@ -1,5 +1,5 @@
 {
-  "originHash" : "d5c15ccfb4a5bf7c2858c8c4494ae419fe946f30b5d956d3b3378b8a67628724",
+  "originHash" : "c4ae51975085f3a5389919672bb3dddb39966e44853c61758522d246aacc2590",
   "pins" : [
     {
       "identity" : "levenshtein-transformations",
@@ -87,8 +87,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-log.git",
       "state" : {
-        "revision" : "7dc6101ae4dbe95cd3bc9cebad3b7cf8e49a7a63",
-        "version" : "1.13.0"
+        "revision" : "2aed77ae5ec9a86d8fe42c12275e4c2653a286ee",
+        "version" : "1.13.1"
       }
     }
   ],

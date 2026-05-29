@@ -57,16 +57,14 @@ public enum CacheSecurityCoordinator: Sendable {
             return false
         }
         #endif
-        SnapshotCacheSession.installSyncKey(key)
-        Task { await SnapshotCacheSession.shared.install(key) }
+        installSessionKey(key)
         return true
     }
 
     public static func unlock(password: String) throws {
         let directory = primaryCacheDirectory()
         let key = try SnapshotCachePasswordProtection.unlock(password: password, in: directory)
-        Task { await SnapshotCacheSession.shared.install(key) }
-        SnapshotCacheSession.installSyncKey(key)
+        installSessionKey(key)
         #if os(macOS)
         try SnapshotCacheKeychain.storeSessionKey(key)
         #else
@@ -84,8 +82,7 @@ public enum CacheSecurityCoordinator: Sendable {
 
     /// Restores a session after the user cancels a voluntary lock (toolbar or settings).
     public static func restoreUnlockedSession(_ key: SymmetricKey) {
-        Task { await SnapshotCacheSession.shared.install(key) }
-        SnapshotCacheSession.installSyncKey(key)
+        installSessionKey(key)
         #if os(macOS)
         try? SnapshotCacheKeychain.storeSessionKey(key)
         #else
@@ -106,8 +103,7 @@ public enum CacheSecurityCoordinator: Sendable {
     public static func enablePasswordProtection(_ password: String) throws {
         let directory = primaryCacheDirectory()
         let key = try SnapshotCachePasswordProtection.setupPassword(password, in: directory)
-        Task { await SnapshotCacheSession.shared.install(key) }
-        SnapshotCacheSession.installSyncKey(key)
+        installSessionKey(key)
         #if os(macOS)
         try SnapshotCacheKeychain.storeSessionKey(key)
         #else
@@ -122,13 +118,17 @@ public enum CacheSecurityCoordinator: Sendable {
             to: newPassword,
             in: directory
         )
-        Task { await SnapshotCacheSession.shared.install(key) }
-        SnapshotCacheSession.installSyncKey(key)
+        installSessionKey(key)
         #if os(macOS)
         try SnapshotCacheKeychain.storeSessionKey(key)
         #else
         try SnapshotCacheSessionFile.storeSessionKey(key, in: directory)
         #endif
+    }
+
+    private static func installSessionKey(_ key: SymmetricKey) {
+        SnapshotCacheSession.installSyncKey(key)
+        Task { await SnapshotCacheSession.shared.adoptSyncKey() }
     }
 
     public static func disablePasswordProtection(password: String) throws {

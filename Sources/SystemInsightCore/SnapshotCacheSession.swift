@@ -30,6 +30,11 @@ public actor SnapshotCacheSession {
         Self.syncKey = key
     }
 
+    /// Copies ``syncKey`` into actor state after ``installSyncKey(_:)`` on the caller side.
+    public func adoptSyncKey() {
+        encryptionKey = Self.syncKey
+    }
+
     nonisolated public static func installSyncKey(_ key: SymmetricKey) {
         syncKey = key
     }

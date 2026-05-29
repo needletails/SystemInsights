@@ -662,7 +662,7 @@ public struct SystemMetricCollector: MetricCollecting {
         guard let contents = try? String(contentsOfFile: "/proc/net/route", encoding: .utf8) else {
             return nil
         }
-        return contents.split(whereSeparator: \.isNewline).dropFirst().compactMap { line in
+        return contents.split(whereSeparator: \.isNewline).dropFirst().compactMap { (line: Substring) -> String? in
             let fields = line.split(whereSeparator: \.isWhitespace)
             guard fields.count > 3, fields[1] == "00000000" else { return nil }
             return String(fields[0])

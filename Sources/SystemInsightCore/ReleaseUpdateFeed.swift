@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 /// Remote release metadata for notify-only update checks (no auto-install).
 public struct ReleaseUpdateFeed: Codable, Sendable, Equatable {
     public var version: String
