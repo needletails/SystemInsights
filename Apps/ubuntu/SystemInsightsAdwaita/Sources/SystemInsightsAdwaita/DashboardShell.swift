@@ -475,12 +475,20 @@ struct DashboardView: @preconcurrency View {
     }
 
     private func collectSnapshot() {
-        Task { await collectSnapshotAsync() }
+        Task { @MainActor in
+            await collectSnapshotAsync()
+        }
     }
 
     private func collectSnapshotAsync() async {
-        guard security.isUnlocked, !isCollecting else { return }
+        guard security.isUnlocked else {
+            postStatus("Cache is locked. Unlock before collecting a snapshot.")
+            return
+        }
+        guard !isCollecting else { return }
+
         isCollecting = true
+        postStatus("Collecting snapshot…")
         defer { isCollecting = false }
 
         do {
@@ -506,13 +514,17 @@ struct DashboardView: @preconcurrency View {
             let collectedSnapshot = baseSnapshot.withNetworkActivity(
                 Array(recentActivity.prefix(NetworkSamplingLimits.maxActivityEvents))
             )
-            try await Task.detached {
-                try DashboardCacheLocations.writeSnapshot(collectedSnapshot)
-            }.value
-            UIViewDeferral.run {
-                snapshot = collectedSnapshot
+            snapshot = collectedSnapshot
+            do {
+                try await Task.detached {
+                    try DashboardCacheLocations.writeSnapshot(collectedSnapshot)
+                }.value
+                postStatus("Collected a fresh policy scan and live snapshot.")
+            } catch {
+                postStatus(
+                    "Snapshot collected but could not save to cache: \(error.localizedDescription)"
+                )
             }
-            postStatus("Collected a fresh policy scan and live snapshot.")
         } catch {
             postStatus("Collection failed: \(error.localizedDescription)")
         }

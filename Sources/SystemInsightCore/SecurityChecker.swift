@@ -219,7 +219,7 @@ public struct SystemSecurityChecker: SecurityChecking {
         }
 
         let sensitivePaths = ["/etc/passwd", "/etc/shadow", "/etc/sudoers"]
-        for path in sensitivePaths where isWorldWritable(path: path) {
+        for path in sensitivePaths where isWorldWritable(path: LinuxSandboxAdaptation.hostPath(path)) {
             findings.append(SecurityFinding(
                 id: "permissions.\(path)",
                 title: "Sensitive path is world-writable",

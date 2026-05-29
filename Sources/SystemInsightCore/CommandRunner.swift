@@ -169,6 +169,22 @@ enum LinuxSandboxAdaptation {
         #endif
     }
 
+    /// Map absolute host paths for Flatpak `host-os` mounts.
+    static func hostPath(_ path: String) -> String {
+        #if os(Linux)
+        guard path.hasPrefix("/"), !path.hasPrefix("/run/host/") else {
+            return path
+        }
+        let hostCandidate = "/run/host\(path)"
+        if FileManager.default.fileExists(atPath: hostCandidate) {
+            return hostCandidate
+        }
+        return path
+        #else
+        return path
+        #endif
+    }
+
     /// Resolve an executable path, preferring the host copy under `/run/host` when present.
     static func resolveExecutable(_ executable: String) -> String {
         #if os(Linux)

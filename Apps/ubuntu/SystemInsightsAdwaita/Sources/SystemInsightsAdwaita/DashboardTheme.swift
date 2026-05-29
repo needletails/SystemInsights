@@ -19,7 +19,7 @@ enum DashboardTheme {
     }
     .operations-sidebar-column {
       min-width: 330px;
-      max-width: 330px;
+      width: 330px;
     }
     .operations-traffic-panel {
       min-height: 292px;
@@ -39,7 +39,7 @@ enum DashboardTheme {
     }
     .operations-sidebar-panel {
       min-width: 0;
-      max-width: 330px;
+      width: 330px;
     }
     .operations-surface-body {
       padding: 2px 14px 12px 14px;
@@ -124,7 +124,7 @@ enum DashboardTheme {
     }
     .operations-table-panel-activity {
       min-width: 306px;
-      max-width: 306px;
+      width: 306px;
     }
     .operations-table-panel-title {
       font-weight: 700;
@@ -222,7 +222,7 @@ enum DashboardTheme {
     }
     .operations-empty-state {
       padding: 32px;
-      max-width: 520px;
+      width: 520px;
     }
     .operations-section-gap {
       margin-bottom: 16px;
@@ -246,7 +246,7 @@ enum DashboardTheme {
     .operations-metric-tile-inner {
       padding: 12px 14px 13px 14px;
       min-height: 84px;
-      max-height: 96px;
+      height: 96px;
     }
     .operations-metric-meter {
       margin-top: 10px;
@@ -276,7 +276,7 @@ enum DashboardTheme {
       padding: 10px 16px;
       margin-right: 10px;
       min-width: 108px;
-      max-width: 128px;
+      width: 128px;
     }
     .operations-score-value-row {
       margin-top: 2px;

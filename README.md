@@ -240,17 +240,42 @@ Do **not** build with `Vendor/adwaita-swift/io.github.AparokshaUI.Demo.json` —
 builds the upstream Adwaita demo (`Demo`) and fails at install time with
 `cannot stat '.build/debug/Demo'`.
 
-Use the project manifest instead:
+**One-time setup in GNOME Builder**
 
-```sh
-# From the repository root
-flatpak-builder --force-clean flatpak-build com.needletails.systeminsights.json
-```
+1. Open the **SystemInsights repository root** (the folder that contains `Package.swift` and
+   `com.needletails.systeminsights.json`).
+2. Open **Project Settings** (gear icon in the header bar).
+3. Go to **Build → Flatpak manifest**.
+4. Choose **`com.needletails.systeminsights.json`** at the repository root (not the Adwaita
+   Demo manifest under `Vendor/`).
+5. Close settings.
 
-In GNOME Builder, open **Project Settings → Build → Flatpak manifest** and select
-`com.needletails.systeminsights.json` at the repository root (or
-`build-aux/flatpak/com.needletails.systeminsights.json`). The build produces
-`system-insights-ui`, not `Demo`.
+**After pulling new changes**
+
+1. **Version Control → Pull** (or sync from your git remote) so Linux has the latest Swift
+   sources and manifest.
+2. **Build → Clean** (or **Clean Build of…**).
+3. Click **Run** (▶) to rebuild and launch the Flatpak app.
+
+Manifest changes (sandbox permissions, install script) only apply after a **clean rebuild**,
+not a quick re-run of an old build.
+
+**Running and debugging**
+
+- Use **Run** (▶) to build and launch `system-insights-ui` inside Flatpak.
+- Build output appears in the **Build** panel at the bottom; runtime messages (GTK/MESA
+  warnings) appear in the **Run** / application log panel.
+- Those GPU/theme warnings are usually harmless.
+
+**If “Collect snapshot” does nothing**
+
+1. Confirm the manifest is `com.needletails.systeminsights.json` (step 4 above).
+2. **Clean** and **Run** again so the app includes current sandbox permissions (`host-os`,
+   `home`, cache persist, Flatpak host commands).
+3. On the empty dashboard, tap **Collect snapshot** — watch for the status banner at the top
+   (“Collecting snapshot…”, then success or an error message).
+4. If you see a **password / unlock** screen instead of the dashboard, enter the cache password
+   first; collection does not run while locked.
 
 The Flatpak manifest grants host read access (`host-os`), runs host commands via
 `flatpak-spawn --host`, and persists `~/.local/share/system-insights` so the app
