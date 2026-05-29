@@ -46,6 +46,9 @@ private actor InternetLatencyProbe {
     }
 
     private nonisolated static func measure(endpoint: URL) async -> Double? {
+        #if os(Linux)
+        return measureLinuxWithCurl(endpoint: endpoint)
+        #else
         var request = URLRequest(url: endpoint)
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 2
@@ -68,7 +71,41 @@ private actor InternetLatencyProbe {
         } catch {
             return nil
         }
+        #endif
     }
+
+    #if os(Linux)
+    /// swift-corelibs-foundation ``URLSession`` can crash on deinit (`_MultiHandle` retain bug) inside Flatpak/GTK.
+    private nonisolated static func measureLinuxWithCurl(endpoint: URL) -> Double? {
+        guard let curl = LinuxSandboxAdaptation.firstExecutable([
+            "/usr/bin/curl",
+            "/bin/curl"
+        ]) else {
+            return nil
+        }
+
+        guard let output = CommandRunner.run(
+            curl,
+            arguments: [
+                "--silent",
+                "--fail",
+                "--location",
+                "--output", "/dev/null",
+                "--write-out", "%{time_total}",
+                "--max-time", "2",
+                "--user-agent", "SystemInsights/0.1 latency-probe",
+                endpoint.absoluteString
+            ],
+            timeout: 3
+        ), output.exitCode == 0 else {
+            return nil
+        }
+
+        let trimmed = output.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let seconds = Double(trimmed), seconds > 0 else { return nil }
+        return (seconds * 1_000).rounded()
+    }
+    #endif
 }
 
 public struct SystemMetricCollector: MetricCollecting {

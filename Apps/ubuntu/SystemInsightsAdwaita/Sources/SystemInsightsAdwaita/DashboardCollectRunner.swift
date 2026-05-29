@@ -47,10 +47,10 @@ enum DashboardCollectRunner {
 
         let startedAt = Date()
         do {
-            DashboardCollectDiagnostics.log("\(buildMarker) policy scan…")
+            DashboardCollectDiagnostics.log("\(buildMarker) metrics + policy scan…")
             let baseSnapshot = try await NetworkSamplingService.shared.fullSnapshot()
             DashboardCollectDiagnostics.log(
-                "\(buildMarker) policy scan done score=\(baseSnapshot.score) elapsed=\(String(format: "%.1f", Date().timeIntervalSince(startedAt)))s"
+                "\(buildMarker) snapshot done score=\(baseSnapshot.score) elapsed=\(String(format: "%.1f", Date().timeIntervalSince(startedAt)))s"
             )
 
             DashboardCollectDiagnostics.log("\(buildMarker) visible sockets…")

@@ -56,7 +56,10 @@ struct DashboardView: @preconcurrency View {
     }
 
     var view: Body {
-        let _ = renderState.generation
+        let _ = {
+            model.bind(renderState: renderState)
+            return renderState.generation
+        }()
         OperationsRoot(onFirstAppear: performLaunchBootstrap) {
             screenContent
         }
