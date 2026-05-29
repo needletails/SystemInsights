@@ -65,7 +65,7 @@ enum LinuxRuntimeEnvironment {
     }
 
     private static func environmentValue(_ key: String) -> String {
-        if let value = getenv(key), let text = String(validatingUTF8: value), !text.isEmpty {
+        if let value = getenv(key), let text = String(validatingCString: value), !text.isEmpty {
             return text
         }
         return "unset"

@@ -10,6 +10,14 @@ import Crypto
 
 @MainActor
 struct DashboardView: @preconcurrency View {
+    /// Survives Adwaita recreating the view (see repeated `dashboard init` in Flatpak logs).
+    @State(wrappedValue: false, "com.needletails.systeminsights.did-bootstrap", forceUpdates: true)
+    private var didBootstrap
+    @State(wrappedValue: nil as InsightSnapshot?, "com.needletails.systeminsights.snapshot", forceUpdates: true)
+    private var snapshot
+    @State(wrappedValue: false, "com.needletails.systeminsights.is-collecting", forceUpdates: true)
+    private var isCollecting
+
     @State private var security: DashboardSecurityState
     @State private var screen: DashboardScreen
     @State private var securityActionInFlight = false
@@ -18,7 +26,6 @@ struct DashboardView: @preconcurrency View {
     @State private var inspectorVisible = false
     @State private var selectedRecord: NetworkRecordSelection?
 
-    @State private var snapshot: InsightSnapshot?
     @State private var recentActivity: [NetworkActivityEvent] = []
     @State private var liveNetwork: NetworkMetrics?
     @State private var liveNetworkSamples: [NetworkMetrics] = []
@@ -28,7 +35,6 @@ struct DashboardView: @preconcurrency View {
     @State private var lastSocketFingerprint: UInt64?
     @State private var announcedSocketLogPath = false
     @State private var statusMessage = ""
-    @State private var isCollecting = false
     @State private var isRefreshingTelemetry = false
     @State private var isRefreshingLiveNetwork = false
     @State private var isRefreshingSockets = false
@@ -54,13 +60,8 @@ struct DashboardView: @preconcurrency View {
     }
 
     var view: Body {
-        OperationsRoot {
-            Box {
-                DashboardLaunchTrigger(onReady: performLaunchBootstrap)
-                screenContent
-            }
-            .hexpand()
-            .vexpand()
+        OperationsRoot(onFirstAppear: performLaunchBootstrap) {
+            screenContent
         }
     }
 
@@ -77,10 +78,35 @@ struct DashboardView: @preconcurrency View {
     }
 
     private func performLaunchBootstrap() {
+        guard !didBootstrap else {
+            DashboardCollectDiagnostics.log("dashboard bootstrap skipped (already ran)")
+            ensureMonitoringIfNeeded()
+            return
+        }
+        didBootstrap = true
         DashboardCollectDiagnostics.log(
             "dashboard bootstrap (flatpak=\(ProcessInfo.processInfo.environment["FLATPAK_ID"] ?? "no"))"
         )
+        prepareCacheSessionIfNeeded()
         reconcileSecurityWithScreen(bootstrapIfUnlocked: true)
+    }
+
+    private func prepareCacheSessionIfNeeded() {
+        guard !CacheSecurityCoordinator.isPasswordProtectionEnabled() else { return }
+        do {
+            _ = try SnapshotCacheKeyStore.encryptionKey(
+                forCacheDirectory: CacheSecurityCoordinator.primaryCacheDirectory()
+            )
+            DashboardCollectDiagnostics.log("cache session key ready")
+        } catch {
+            DashboardCollectDiagnostics.log("cache session key failed: \(error)")
+        }
+    }
+
+    private func ensureMonitoringIfNeeded() {
+        guard security.isUnlocked, snapshot != nil, !isMonitoring else { return }
+        DashboardCollectDiagnostics.log("dashboard resuming monitoring")
+        startMonitoring()
     }
 
     @ViewBuilder
@@ -281,12 +307,8 @@ struct DashboardView: @preconcurrency View {
                         .dimLabel()
                         .padding()
                     Button(isCollecting ? "Collecting…" : "Collect snapshot") {
-                        UIViewDeferral.run {
-                            DashboardCollectDiagnostics.log("collect button tapped")
-                            Task { @MainActor in
-                                await collectSnapshotAsync()
-                            }
-                        }
+                        DashboardCollectDiagnostics.log("collect button tapped")
+                        collectSnapshot()
                     }
                     .suggested()
                     .pill()
@@ -500,8 +522,10 @@ struct DashboardView: @preconcurrency View {
     }
 
     private func collectSnapshot() {
-        Task { @MainActor in
-            await collectSnapshotAsync()
+        UIViewDeferral.run {
+            Task { @MainActor in
+                await collectSnapshotAsync()
+            }
         }
     }
 

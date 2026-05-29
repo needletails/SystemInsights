@@ -1,4 +1,5 @@
 import Adwaita
+import Foundation
 
 enum DashboardTheme {
     static let css = """
@@ -435,6 +436,7 @@ struct OperationsRoot: @preconcurrency View {
     /// GTK applies custom CSS at display scope; register once to avoid stacking providers on unlock → dashboard transitions.
     private static var installedApplicationCSS = false
 
+    var onFirstAppear: (() -> Void)?
     @ViewBuilder let content: () -> Body
 
     var view: Body {
@@ -444,6 +446,16 @@ struct OperationsRoot: @preconcurrency View {
         .style("operations-root")
         .hexpand()
         .vexpand()
+        .onAppear {
+            UIViewDeferral.run {
+                onFirstAppear?()
+            }
+            DispatchQueue.main.asyncAfter(deadline: DispatchTime.now() + 0.35) {
+                UIViewDeferral.run {
+                    onFirstAppear?()
+                }
+            }
+        }
 
         if Self.installedApplicationCSS {
             root
