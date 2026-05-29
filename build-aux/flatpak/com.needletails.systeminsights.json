@@ -43,13 +43,7 @@
         }
       ],
       "build-commands": [
-        "swift build --package-path Apps/ubuntu/SystemInsightsAdwaita -c debug --product system-insights-ui --static-swift-stdlib",
-        "BIN_DIR=$(swift build --package-path Apps/ubuntu/SystemInsightsAdwaita -c debug --product system-insights-ui --static-swift-stdlib --show-bin-path)",
-        "install -Dm755 \"$BIN_DIR/system-insights-ui\" /app/bin/system-insights-ui",
-        "install -Dm644 Apps/ubuntu/SystemInsightsAdwaita/Resources/com.needletails.systeminsights.desktop /app/share/applications/com.needletails.systeminsights.desktop",
-        "install -Dm644 Apps/ubuntu/SystemInsightsAdwaita/Resources/icons/hicolor/256x256/apps/com.needletails.systeminsights.png /app/share/icons/hicolor/256x256/apps/com.needletails.systeminsights.png",
-        "install -Dm644 Apps/ubuntu/SystemInsightsAdwaita/Resources/icons/hicolor/512x512/apps/com.needletails.systeminsights.png /app/share/icons/hicolor/512x512/apps/com.needletails.systeminsights.png",
-        "if [ -f VERSION ]; then install -Dm644 VERSION /app/share/system-insights/VERSION; fi"
+        "sh Scripts/flatpak-install-ui.sh"
       ]
     }
   ]
