@@ -87,6 +87,62 @@ final class DashboardViewModel {
         DashboardCollectRunner.start()
     }
 
+    func cacheIsUnlockedForCollect() -> Bool {
+        !CacheSecurityCoordinator.isPasswordProtectionEnabled() || CacheSecurityCoordinator.isUnlocked()
+    }
+
+    func reportCollectLocked() {
+        statusMessage = "Cache is locked. Unlock before collecting a snapshot."
+        showStatusBanner = true
+        notifyUI()
+    }
+
+    func markCollectStarted() {
+        if isCollecting {
+            DashboardCollectDiagnostics.log("collect: clearing stuck isCollecting flag")
+            isCollecting = false
+        }
+        isCollecting = true
+        statusMessage = "Collecting snapshot…"
+        showStatusBanner = true
+        notifyUI()
+        DashboardCollectDiagnostics.log("collect started")
+    }
+
+    func markCollectSucceeded(
+        snapshot collectedSnapshot: InsightSnapshot,
+        socketUpdate: DashboardSamplingPipeline.SocketUIUpdate?
+    ) {
+        defer {
+            isCollecting = false
+            notifyUI()
+        }
+        if let socketUpdate {
+            visibleSockets = socketUpdate.connections
+            recentActivity = socketUpdate.recentActivity
+            previousConnections = socketUpdate.previousConnections
+            lastSocketSampleAt = Date()
+        }
+        liveNetwork = collectedSnapshot.metrics.network
+        liveNetworkSamples = [collectedSnapshot.metrics.network]
+        snapshot = collectedSnapshot
+        statusMessage = "Collected a fresh policy scan and live snapshot."
+        showStatusBanner = true
+        notifyUI()
+        DashboardCollectDiagnostics.log("collect: snapshot applied to view model")
+        onCollectComplete?()
+    }
+
+    func markCollectFailed(_ error: Error) {
+        defer {
+            isCollecting = false
+            notifyUI()
+        }
+        statusMessage = "Collection failed: \(error.localizedDescription)"
+        showStatusBanner = true
+        notifyUI()
+    }
+
     func collectSnapshotAsync() async {
         let unlocked = !CacheSecurityCoordinator.isPasswordProtectionEnabled()
             || CacheSecurityCoordinator.isUnlocked()
@@ -175,7 +231,7 @@ final class DashboardViewModel {
         }
     }
 
-    private func prepareCacheSessionIfNeeded() {
+    func prepareCacheSessionIfNeeded() {
         guard !CacheSecurityCoordinator.isPasswordProtectionEnabled() else { return }
         do {
             _ = try SnapshotCacheKeyStore.encryptionKey(

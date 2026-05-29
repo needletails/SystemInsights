@@ -292,7 +292,7 @@ struct DashboardView: @preconcurrency View {
                         .dimLabel()
                         .padding()
                     Button(model.isCollecting ? "Collecting…" : "Collect snapshot") {
-                        DashboardCollectDiagnostics.log("collect button tapped")
+                        DashboardCollectDiagnostics.log("collect button tapped (expect COLLECT_V3 next)")
                         model.startCollect()
                     }
                     .suggested()
