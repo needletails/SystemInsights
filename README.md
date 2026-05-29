@@ -252,6 +252,10 @@ In GNOME Builder, open **Project Settings → Build → Flatpak manifest** and s
 `build-aux/flatpak/com.needletails.systeminsights.json`). The build produces
 `system-insights-ui`, not `Demo`.
 
+The Flatpak manifest grants host read access (`host-os`), runs host commands via
+`flatpak-spawn --host`, and persists `~/.local/share/system-insights` so the app
+can collect system metrics and cache snapshots like the native Ubuntu build.
+
 ### Ubuntu (GNOME and other desktops)
 
 The same Swift 6 native Libadwaita dashboard runs on Ubuntu. It refreshes live transfer

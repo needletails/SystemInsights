@@ -37,15 +37,27 @@ enum CommandRunner {
         arguments: [String] = [],
         timeout: TimeInterval = 10
     ) -> CommandOutput? {
-        guard FileManager.default.isExecutableFile(atPath: executable) else {
+        #if os(Linux)
+        let invocation = LinuxSandboxAdaptation.commandInvocation(
+            executable: executable,
+            arguments: arguments
+        )
+        let resolvedExecutable = invocation.executable
+        let resolvedArguments = invocation.arguments
+        #else
+        let resolvedExecutable = executable
+        let resolvedArguments = arguments
+        #endif
+
+        guard FileManager.default.isExecutableFile(atPath: resolvedExecutable) else {
             return nil
         }
 
         let standardOutput = Pipe()
         let standardError = Pipe()
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
+        process.executableURL = URL(fileURLWithPath: resolvedExecutable)
+        process.arguments = resolvedArguments
         process.standardOutput = standardOutput
         process.standardError = standardError
         process.environment = hardenedEnvironment()

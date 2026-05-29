@@ -234,8 +234,13 @@ public struct SystemMetricCollector: MetricCollecting {
     }
 
     private func diskUsage() -> Double {
+        #if os(Linux)
+        let path = LinuxSandboxAdaptation.diskUsagePath
+        #else
+        let path = NSHomeDirectory()
+        #endif
         guard
-            let attributes = try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory()),
+            let attributes = try? FileManager.default.attributesOfFileSystem(forPath: path),
             let size = (attributes[.systemSize] as? NSNumber)?.doubleValue,
             let free = (attributes[.systemFreeSize] as? NSNumber)?.doubleValue,
             size > 0
@@ -607,8 +612,9 @@ public struct SystemMetricCollector: MetricCollecting {
     }
 
     private func linuxCPUCounters() -> (total: Double, idle: Double)? {
+        let statPath = "\(LinuxSandboxAdaptation.procDirectory)/stat"
         guard
-            let contents = try? String(contentsOfFile: "/proc/stat", encoding: .utf8),
+            let contents = try? String(contentsOfFile: statPath, encoding: .utf8),
             let cpuLine = contents.split(whereSeparator: \.isNewline).first
         else {
             return nil
@@ -620,7 +626,8 @@ public struct SystemMetricCollector: MetricCollecting {
     }
 
     private func linuxMemoryPressure() -> Double {
-        guard let contents = try? String(contentsOfFile: "/proc/meminfo", encoding: .utf8) else {
+        let meminfoPath = "\(LinuxSandboxAdaptation.procDirectory)/meminfo"
+        guard let contents = try? String(contentsOfFile: meminfoPath, encoding: .utf8) else {
             return 0
         }
 
@@ -659,7 +666,8 @@ public struct SystemMetricCollector: MetricCollecting {
     }
 
     private func linuxDefaultInterface() -> String? {
-        guard let contents = try? String(contentsOfFile: "/proc/net/route", encoding: .utf8) else {
+        let routePath = "\(LinuxSandboxAdaptation.procDirectory)/net/route"
+        guard let contents = try? String(contentsOfFile: routePath, encoding: .utf8) else {
             return nil
         }
         return contents.split(whereSeparator: \.isNewline).dropFirst().compactMap { (line: Substring) -> String? in
@@ -670,7 +678,8 @@ public struct SystemMetricCollector: MetricCollecting {
     }
 
     private func linuxNetworkCounters(for interface: String) -> (received: Double, sent: Double)? {
-        guard let contents = try? String(contentsOfFile: "/proc/net/dev", encoding: .utf8) else {
+        let devPath = "\(LinuxSandboxAdaptation.procDirectory)/net/dev"
+        guard let contents = try? String(contentsOfFile: devPath, encoding: .utf8) else {
             return nil
         }
         for line in contents.split(whereSeparator: \.isNewline) {
@@ -687,7 +696,8 @@ public struct SystemMetricCollector: MetricCollecting {
     }
 
     private func linuxActiveTCPConnections() -> Int {
-        ["/proc/net/tcp", "/proc/net/tcp6"].reduce(0) { count, path in
+        let procNet = "\(LinuxSandboxAdaptation.procDirectory)/net"
+        return ["\(procNet)/tcp", "\(procNet)/tcp6"].reduce(0) { count, path in
             guard let contents = try? String(contentsOfFile: path, encoding: .utf8) else { return count }
             let established = contents.split(whereSeparator: \.isNewline).dropFirst().filter { line in
                 let fields = line.split(whereSeparator: \.isWhitespace)
@@ -698,13 +708,14 @@ public struct SystemMetricCollector: MetricCollecting {
     }
 
     private func linuxVPNConnectivity() -> VPNConnectivity {
-        guard let names = try? FileManager.default.contentsOfDirectory(atPath: "/sys/class/net") else {
+        let netDirectory = LinuxSandboxAdaptation.sysClassNetDirectory
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: netDirectory) else {
             return .unavailable
         }
 
         let interfaces = names.filter { name in
             let isTunnel = ["tun", "tap", "wg", "ppp", "tailscale", "nordlynx"].contains { name.hasPrefix($0) }
-            let statePath = "/sys/class/net/\(name)/operstate"
+            let statePath = "\(netDirectory)/\(name)/operstate"
             let state = try? String(contentsOfFile: statePath, encoding: .utf8)
             return isTunnel && state?.trimmingCharacters(in: .whitespacesAndNewlines) != "down"
         }

@@ -13,7 +13,10 @@
     "--socket=fallback-x11",
     "--device=dri",
     "--socket=wayland",
-    "--filesystem=xdg-data/system-insights:create"
+    "--filesystem=host-os:ro",
+    "--filesystem=home",
+    "--persist=.local/share/system-insights",
+    "--talk-name=org.freedesktop.Flatpak"
   ],
   "build-options": {
     "append-path": "/usr/lib/sdk/swift6/bin",
