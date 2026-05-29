@@ -15,7 +15,7 @@ struct SystemInsightsApp: @preconcurrency App {
         SystemInsightsLogging.bootstrapIfNeeded()
         #if os(Linux)
         DashboardViewModel.shared.resetForProcessLaunch()
-        DashboardCollectDiagnostics.log("app init COLLECT_V3")
+        DashboardCollectDiagnostics.log("app init")
         LinuxSandboxDiagnostics.logStartupReport()
         Idle(delay: 750) {
             DashboardCollectDiagnostics.log("app delayed bootstrap request")

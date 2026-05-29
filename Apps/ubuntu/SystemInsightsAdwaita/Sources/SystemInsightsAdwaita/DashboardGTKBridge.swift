@@ -1,31 +1,33 @@
 import Adwaita
 import Foundation
 
-/// Runs MainActor work on the GTK main loop. Required on Linux — ``MainActor.run`` does not pump from worker threads.
+/// Routes ``MainActor`` work through the platform UI loop (GTK ``Idle`` on Linux, ``MainActor`` elsewhere).
 enum DashboardGTKBridge {
-    static func runOnMain<T: Sendable>(
+    nonisolated static func runOnMain<T: Sendable>(
         _ work: @escaping @MainActor () -> T
     ) async -> T {
         #if os(Linux)
         await withCheckedContinuation { continuation in
             Idle {
-                let value = MainActor.assumeIsolated {
-                    work()
-                }
+                let value = MainActor.assumeIsolated { work() }
                 continuation.resume(returning: value)
             }
         }
         #else
-        await MainActor.run {
-            work()
-        }
+        await MainActor.run { work() }
         #endif
     }
 
-    static func runOnMain(_ work: @escaping @MainActor () -> Void) async {
-        await runOnMain { () -> Void in
-            work()
-            return ()
+    nonisolated static func runOnMain(_ work: @escaping @MainActor () -> Void) async {
+        #if os(Linux)
+        await withCheckedContinuation { continuation in
+            Idle {
+                MainActor.assumeIsolated { work() }
+                continuation.resume()
+            }
         }
+        #else
+        await MainActor.run { work() }
+        #endif
     }
 }

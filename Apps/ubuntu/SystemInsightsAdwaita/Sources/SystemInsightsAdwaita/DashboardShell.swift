@@ -262,7 +262,7 @@ struct DashboardView: @preconcurrency View {
                         .padding()
                     Button(model.isCollecting ? "Collecting…" : "Collect snapshot") {
                         UIViewDeferral.run {
-                            DashboardCollectDiagnostics.log("collect button tapped (expect COLLECT_V3 next)")
+                            DashboardCollectDiagnostics.log("collect button tapped")
                             model.startCollect()
                         }
                     }
@@ -429,8 +429,11 @@ struct DashboardView: @preconcurrency View {
             model.statusMessage = "No cached snapshot on disk. Collecting a fresh snapshot…"
             model.showStatusBanner = true
             model.touchUI()
+            model.startCollect()
         }
-        Task { await checkForReleaseUpdate() }
+        Task.detached {
+            await checkForReleaseUpdate()
+        }
     }
 
     private func resetAfterLock() {
@@ -464,6 +467,8 @@ struct DashboardView: @preconcurrency View {
             model.statusMessage = "No encrypted snapshot found yet. Collecting a fresh snapshot…"
             model.showStatusBanner = true
             model.touchUI()
+            model.startMonitoringIfNeeded()
+            model.startCollect()
         } catch {
             model.statusMessage = "Unable to read cache: \(error.localizedDescription)"
             model.showStatusBanner = true
