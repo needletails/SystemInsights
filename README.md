@@ -234,6 +234,24 @@ The package consumes the specified Adwaita for Swift upstream revision through
 `Vendor/adwaita-swift`. That copy carries a small Swift 6.3 compatibility patch for GLib
 typed constants; details are recorded in `Vendor/adwaita-swift/SYSTEM_INSIGHTS_PATCHES.md`.
 
+#### GNOME Builder / Flatpak
+
+Do **not** build with `Vendor/adwaita-swift/io.github.AparokshaUI.Demo.json` — that manifest
+builds the upstream Adwaita demo (`Demo`) and fails at install time with
+`cannot stat '.build/debug/Demo'`.
+
+Use the project manifest instead:
+
+```sh
+# From the repository root
+flatpak-builder --force-clean flatpak-build com.needletails.systeminsights.json
+```
+
+In GNOME Builder, open **Project Settings → Build → Flatpak manifest** and select
+`com.needletails.systeminsights.json` at the repository root (or
+`build-aux/flatpak/com.needletails.systeminsights.json`). The build produces
+`system-insights-ui`, not `Demo`.
+
 ### Ubuntu (GNOME and other desktops)
 
 The same Swift 6 native Libadwaita dashboard runs on Ubuntu. It refreshes live transfer

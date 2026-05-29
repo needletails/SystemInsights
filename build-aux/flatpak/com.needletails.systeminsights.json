@@ -1,0 +1,56 @@
+{
+  "app-id": "com.needletails.systeminsights",
+  "runtime": "org.gnome.Platform",
+  "runtime-version": "49",
+  "sdk": "org.gnome.Sdk",
+  "sdk-extensions": [
+    "org.freedesktop.Sdk.Extension.swift6"
+  ],
+  "command": "system-insights-ui",
+  "finish-args": [
+    "--share=network",
+    "--share=ipc",
+    "--socket=fallback-x11",
+    "--device=dri",
+    "--socket=wayland",
+    "--filesystem=xdg-data/system-insights:create"
+  ],
+  "build-options": {
+    "append-path": "/usr/lib/sdk/swift6/bin",
+    "prepend-ld-library-path": "/usr/lib/sdk/swift6/lib"
+  },
+  "cleanup": [
+    "/include",
+    "/lib/pkgconfig",
+    "/man",
+    "/share/doc",
+    "/share/gtk-doc",
+    "/share/man",
+    "/share/pkgconfig",
+    "/share/vala",
+    "*.la",
+    "*.a"
+  ],
+  "modules": [
+    {
+      "name": "system-insights",
+      "builddir": true,
+      "buildsystem": "simple",
+      "sources": [
+        {
+          "type": "dir",
+          "path": "../.."
+        }
+      ],
+      "build-commands": [
+        "swift build --package-path Apps/ubuntu/SystemInsightsAdwaita -c debug --product system-insights-ui --static-swift-stdlib",
+        "BIN_DIR=$(swift build --package-path Apps/ubuntu/SystemInsightsAdwaita -c debug --product system-insights-ui --static-swift-stdlib --show-bin-path)",
+        "install -Dm755 \"$BIN_DIR/system-insights-ui\" /app/bin/system-insights-ui",
+        "install -Dm644 Apps/ubuntu/SystemInsightsAdwaita/Resources/com.needletails.systeminsights.desktop /app/share/applications/com.needletails.systeminsights.desktop",
+        "install -Dm644 Apps/ubuntu/SystemInsightsAdwaita/Resources/icons/hicolor/256x256/apps/com.needletails.systeminsights.png /app/share/icons/hicolor/256x256/apps/com.needletails.systeminsights.png",
+        "install -Dm644 Apps/ubuntu/SystemInsightsAdwaita/Resources/icons/hicolor/512x512/apps/com.needletails.systeminsights.png /app/share/icons/hicolor/512x512/apps/com.needletails.systeminsights.png",
+        "if [ -f VERSION ]; then install -Dm644 VERSION /app/share/system-insights/VERSION; fi"
+      ]
+    }
+  ]
+}
