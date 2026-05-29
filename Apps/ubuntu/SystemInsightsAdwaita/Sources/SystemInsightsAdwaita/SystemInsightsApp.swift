@@ -1,4 +1,5 @@
 import Adwaita
+import Foundation
 import SystemInsightCore
 
 @main
@@ -10,7 +11,7 @@ struct SystemInsightsApp: @preconcurrency App {
         SystemInsightsLogging.bootstrapIfNeeded()
         #if os(Linux)
         DashboardCollectDiagnostics.log(
-            "app init flatpak=\(ProcessInfo.processInfo.environment["FLATPAK_ID"] ?? "no") proc=\(LinuxSandboxAdaptation.procDirectory)"
+            "app init flatpak=\(ProcessInfo.processInfo.environment["FLATPAK_ID"] ?? "no")"
         )
         #endif
     }
