@@ -237,10 +237,12 @@ public struct SystemMetricCollector: MetricCollecting {
 
     private func diskUsage() -> Double {
         #if os(Linux)
-        let path = LinuxSandboxAdaptation.diskUsagePath
+        if let usage = LinuxSandboxDiagnostics.probeDiskUsagePercent() {
+            return usage
+        }
+        return 0
         #else
         let path = NSHomeDirectory()
-        #endif
         guard
             let attributes = try? FileManager.default.attributesOfFileSystem(forPath: path),
             let size = (attributes[.systemSize] as? NSNumber)?.doubleValue,
@@ -251,6 +253,7 @@ public struct SystemMetricCollector: MetricCollecting {
         }
 
         return percentage((size - free) / size)
+        #endif
     }
 
     private func topProcesses(arguments: [String]) -> [ProcessMetric] {

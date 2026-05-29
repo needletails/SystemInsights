@@ -10,9 +10,8 @@ struct SystemInsightsApp: @preconcurrency App {
     init() {
         SystemInsightsLogging.bootstrapIfNeeded()
         #if os(Linux)
-        DashboardCollectDiagnostics.log(
-            "app init flatpak=\(ProcessInfo.processInfo.environment["FLATPAK_ID"] ?? "no")"
-        )
+        DashboardCollectDiagnostics.log("app init")
+        LinuxSandboxDiagnostics.logStartupReport()
         #endif
     }
 

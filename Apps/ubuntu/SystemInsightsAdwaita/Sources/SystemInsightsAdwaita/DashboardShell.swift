@@ -46,6 +46,11 @@ struct DashboardView: @preconcurrency View {
         let initialSecurity = DashboardSecurityState()
         _security = State(wrappedValue: initialSecurity)
         _screen = State(wrappedValue: DashboardScreen.from(security: initialSecurity))
+        #if os(Linux)
+        DashboardCollectDiagnostics.log(
+            "dashboard init screen=\(DashboardScreen.from(security: initialSecurity))"
+        )
+        #endif
     }
 
     var view: Body {
