@@ -55,23 +55,29 @@ struct DashboardView: @preconcurrency View {
 
     var view: Body {
         OperationsRoot {
-            switch screen {
-            case .unlock:
-                unlockScreen
-            case .passwordSetup:
-                passwordSetupScreen
-            case .main:
-                dashboardScreen
+            VStack {
+                DashboardLaunchTrigger(onReady: performLaunchBootstrap)
+                switch screen {
+                case .unlock:
+                    unlockScreen
+                case .passwordSetup:
+                    passwordSetupScreen
+                case .main:
+                    dashboardScreen
+                }
+                .hexpand()
+                .vexpand()
             }
+            .hexpand()
+            .vexpand()
         }
-        .onAppear {
-            UIViewDeferral.run {
-                DashboardCollectDiagnostics.log(
-                    "dashboard appeared (flatpak=\(ProcessInfo.processInfo.environment["FLATPAK_ID"] ?? "no"))"
-                )
-                reconcileSecurityWithScreen(bootstrapIfUnlocked: true)
-            }
-        }
+    }
+
+    private func performLaunchBootstrap() {
+        DashboardCollectDiagnostics.log(
+            "dashboard bootstrap (flatpak=\(ProcessInfo.processInfo.environment["FLATPAK_ID"] ?? "no"))"
+        )
+        reconcileSecurityWithScreen(bootstrapIfUnlocked: true)
     }
 
     @ViewBuilder

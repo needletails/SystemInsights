@@ -6,6 +6,9 @@ public enum LinuxSandboxDiagnostics: Sendable {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let hostRoot = FileManager.default.fileExists(atPath: "/run/host")
         let hostProc = FileManager.default.fileExists(atPath: "/run/host/proc/stat")
+        let hostProcReadable = LinuxSandboxAdaptation.procFileContents("stat")?
+            .contains("cpu ") == true
+        let hostSysNet = FileManager.default.fileExists(atPath: "/run/host/sys/class/net")
         let procDirectory = LinuxSandboxAdaptation.procDirectory
         let diskPath = LinuxSandboxAdaptation.diskUsagePath
         let cacheDirectory = CacheSecurityCoordinator.primaryCacheDirectory().path
@@ -17,7 +20,7 @@ public enum LinuxSandboxDiagnostics: Sendable {
         }
 
         let line = """
-        [SystemInsights] sandbox flatpak=\(flatpakID) home=\(home) hostRoot=\(hostRoot) hostProc=\(hostProc) proc=\(procDirectory) diskPath=\(diskPath) diskUsage=\(diskUsage.map { String(format: "%.1f%%", $0) } ?? "n/a") cache=\(cacheDirectory) cacheWritable=\(cacheWritable) flatpakSpawn=\(spawnAvailable)
+        [SystemInsights] sandbox flatpak=\(flatpakID) home=\(home) hostRoot=\(hostRoot) hostProc=\(hostProc) hostProcReadable=\(hostProcReadable) hostSysNet=\(hostSysNet) proc=\(procDirectory) diskPath=\(diskPath) diskUsage=\(diskUsage.map { String(format: "%.1f%%", $0) } ?? "n/a") cache=\(cacheDirectory) cacheWritable=\(cacheWritable) flatpakSpawn=\(spawnAvailable)
 
         """
         FileHandle.standardError.write(Data(line.utf8))

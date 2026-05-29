@@ -1,5 +1,9 @@
 import Foundation
 
+#if os(Linux)
+import Glibc
+#endif
+
 struct CommandOutput {
     let exitCode: Int32
     let stdout: String
@@ -185,6 +189,39 @@ enum LinuxSandboxAdaptation {
         #else
         return path
         #endif
+    }
+
+    static func readProcSymlink(_ relativePath: String) -> String? {
+        let trimmed = relativePath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let hostMountedPath = "/run/host/proc/\(trimmed)"
+        if FileManager.default.fileExists(atPath: hostMountedPath) {
+            var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
+            let length = readlink(hostMountedPath, &buffer, buffer.count)
+            if length > 0 {
+                let path = String(decoding: buffer.prefix(length).map(UInt8.init), as: UTF8.self)
+                if !path.isEmpty { return path }
+            }
+        }
+
+        #if os(Linux)
+        if isFlatpak, let readlink = firstExecutable(["/usr/bin/readlink", "/bin/readlink"]) {
+            guard
+                let output = CommandRunner.run(readlink, arguments: ["-fn", "/proc/\(trimmed)"], timeout: 2),
+                output.exitCode == 0
+            else {
+                return nil
+            }
+            let path = output.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+            return path.isEmpty ? nil : path
+        }
+        #endif
+
+        let sandboxPath = "/proc/\(trimmed)"
+        var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
+        let length = readlink(sandboxPath, &buffer, buffer.count)
+        guard length > 0 else { return nil }
+        let path = String(decoding: buffer.prefix(length).map(UInt8.init), as: UTF8.self)
+        return path.isEmpty ? nil : path
     }
 
     static func procFileContents(_ relativePath: String) -> String? {

@@ -17,6 +17,9 @@ enum ExecutablePathResolver {
         let path = String(decoding: buffer.prefix(Int(length)).map(UInt8.init), as: UTF8.self)
         return path.isEmpty ? nil : path
         #elseif os(Linux)
+        if let path = LinuxSandboxAdaptation.readProcSymlink("\(pid)/exe") {
+            return path
+        }
         let linkPath = "\(LinuxSandboxAdaptation.procDirectory)/\(pid)/exe"
         var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
         let length = readlink(linkPath, &buffer, buffer.count)
