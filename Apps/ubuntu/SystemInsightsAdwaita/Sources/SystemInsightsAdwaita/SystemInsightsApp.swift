@@ -14,8 +14,13 @@ struct SystemInsightsApp: @preconcurrency App {
         app = AdwaitaApp(id: "com.needletails.systeminsights")
         SystemInsightsLogging.bootstrapIfNeeded()
         #if os(Linux)
+        DashboardViewModel.shared.resetForProcessLaunch()
         DashboardCollectDiagnostics.log("app init")
         LinuxSandboxDiagnostics.logStartupReport()
+        DispatchQueue.main.asyncAfter(deadline: DispatchTime.now() + 0.75) {
+            DashboardCollectDiagnostics.log("app delayed bootstrap request")
+            DashboardViewModel.shared.requestDelayedBootstrap()
+        }
         #endif
     }
 

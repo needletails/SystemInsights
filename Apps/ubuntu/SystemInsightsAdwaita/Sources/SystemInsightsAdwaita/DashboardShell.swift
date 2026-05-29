@@ -10,13 +10,9 @@ import Crypto
 
 @MainActor
 struct DashboardView: @preconcurrency View {
-    /// Survives Adwaita recreating the view (see repeated `dashboard init` in Flatpak logs).
-    @State(wrappedValue: false, "com.needletails.systeminsights.did-bootstrap", forceUpdates: true)
-    private var didBootstrap
-    @State(wrappedValue: nil as InsightSnapshot?, "com.needletails.systeminsights.snapshot", forceUpdates: true)
-    private var snapshot
-    @State(wrappedValue: false, "com.needletails.systeminsights.is-collecting", forceUpdates: true)
-    private var isCollecting
+    @State private var renderState = DashboardRenderState()
+    @State private var snapshot: InsightSnapshot?
+    private var model: DashboardViewModel { .shared }
 
     @State private var security: DashboardSecurityState
     @State private var screen: DashboardScreen
@@ -60,9 +56,16 @@ struct DashboardView: @preconcurrency View {
     }
 
     var view: Body {
+        let _ = renderState.generation
         OperationsRoot(onFirstAppear: performLaunchBootstrap) {
             screenContent
         }
+    }
+
+    private func syncViewStateFromModel() {
+        snapshot = model.snapshot
+        statusMessage = model.statusMessage
+        showStatusBanner = model.showStatusBanner
     }
 
     @ViewBuilder
@@ -78,35 +81,17 @@ struct DashboardView: @preconcurrency View {
     }
 
     private func performLaunchBootstrap() {
-        guard !didBootstrap else {
-            DashboardCollectDiagnostics.log("dashboard bootstrap skipped (already ran)")
-            ensureMonitoringIfNeeded()
-            return
+        model.bind(renderState: renderState)
+        model.registerDelayedBootstrap(performLaunchBootstrap)
+        model.onCollectComplete = {
+            syncViewStateFromModel()
+            startMonitoring()
         }
-        didBootstrap = true
-        DashboardCollectDiagnostics.log(
-            "dashboard bootstrap (flatpak=\(ProcessInfo.processInfo.environment["FLATPAK_ID"] ?? "no"))"
-        )
-        prepareCacheSessionIfNeeded()
-        reconcileSecurityWithScreen(bootstrapIfUnlocked: true)
-    }
-
-    private func prepareCacheSessionIfNeeded() {
-        guard !CacheSecurityCoordinator.isPasswordProtectionEnabled() else { return }
-        do {
-            _ = try SnapshotCacheKeyStore.encryptionKey(
-                forCacheDirectory: CacheSecurityCoordinator.primaryCacheDirectory()
-            )
-            DashboardCollectDiagnostics.log("cache session key ready")
-        } catch {
-            DashboardCollectDiagnostics.log("cache session key failed: \(error)")
+        model.performLaunchBootstrap(security: &security, screen: &screen)
+        syncViewStateFromModel()
+        if model.snapshot != nil, !isMonitoring {
+            startMonitoring()
         }
-    }
-
-    private func ensureMonitoringIfNeeded() {
-        guard security.isUnlocked, snapshot != nil, !isMonitoring else { return }
-        DashboardCollectDiagnostics.log("dashboard resuming monitoring")
-        startMonitoring()
     }
 
     @ViewBuilder
@@ -171,7 +156,7 @@ struct DashboardView: @preconcurrency View {
                     }
                 )
             } end: {
-                ToolbarActivitySlot(active: isCollecting || isRefreshingLiveNetwork || isRefreshingSockets)
+                ToolbarActivitySlot(active: model.isCollecting || isRefreshingLiveNetwork || isRefreshingSockets)
                 ToolbarGlyphButton(
                     glyph: OperationsGlyphs.symbol(for: .default(icon: .preferencesSystem)),
                     tooltip: "Settings",
@@ -238,7 +223,7 @@ struct DashboardView: @preconcurrency View {
 
     @ViewBuilder
     private var dashboardMainContent: Body {
-        if let snapshot {
+        if let snapshot = model.snapshot ?? snapshot {
             ScrollView {
                 VStack {
                     releaseUpdateBanner
@@ -259,7 +244,7 @@ struct DashboardView: @preconcurrency View {
                         socketSearchIndex: socketSearchIndex,
                         recentActivity: recentActivity,
                         lastSocketSampleAt: lastSocketSampleAt,
-                        isCollecting: isCollecting,
+                        isCollecting: model.isCollecting,
                         onScan: collectSnapshot,
                         onSelectSocket: { presentInspector(.socket($0)) },
                         onSelectEvent: { presentInspector(.event($0)) }
@@ -306,9 +291,9 @@ struct DashboardView: @preconcurrency View {
                     Text("Live network sampling is running. Collect a snapshot for health score, security findings, and the full socket console.")
                         .dimLabel()
                         .padding()
-                    Button(isCollecting ? "Collecting…" : "Collect snapshot") {
+                    Button(model.isCollecting ? "Collecting…" : "Collect snapshot") {
                         DashboardCollectDiagnostics.log("collect button tapped")
-                        collectSnapshot()
+                        model.startCollect()
                     }
                     .suggested()
                     .pill()
@@ -501,6 +486,7 @@ struct DashboardView: @preconcurrency View {
         guard security.isUnlocked || CacheSecurityCoordinator.isUnlocked() else { return }
         do {
             let loaded = try DashboardCacheLocations.readSnapshot()
+            model.applySnapshot(loaded)
             snapshot = loaded
             recentActivity = Array(loaded.networkActivity.prefix(NetworkSamplingLimits.maxActivityEvents))
             liveNetwork = loaded.metrics.network
@@ -522,96 +508,14 @@ struct DashboardView: @preconcurrency View {
     }
 
     private func collectSnapshot() {
-        UIViewDeferral.run {
-            Task { @MainActor in
-                await collectSnapshotAsync()
-            }
-        }
-    }
-
-    private func collectSnapshotAsync() async {
-        guard security.isUnlocked else {
-            postStatus("Cache is locked. Unlock before collecting a snapshot.")
-            return
-        }
-        guard !isCollecting else {
-            DashboardCollectDiagnostics.log("collect skipped: already in progress")
-            return
-        }
-
-        isCollecting = true
-        statusMessage = "Collecting snapshot…"
-        showStatusBanner = true
-        DashboardCollectDiagnostics.log("collect started")
-        defer {
-            SecurityUIUpdate.afterCurrentEvent {
-                isCollecting = false
-            }
-        }
-
-        let startedAt = Date()
-
-        do {
-            DashboardCollectDiagnostics.log("collect: policy scan…")
-            let baseSnapshot = try await NetworkSamplingService.shared.fullSnapshot()
-            DashboardCollectDiagnostics.log(
-                "collect: policy scan done (score=\(baseSnapshot.score), elapsed=\(String(format: "%.1f", Date().timeIntervalSince(startedAt)))s)"
-            )
-
-            DashboardCollectDiagnostics.log("collect: visible sockets…")
-            let sockets = await NetworkSamplingService.shared.visibleSockets()
-            DashboardCollectDiagnostics.log("collect: sockets=\(sockets.count)")
-
-            let activitySnapshot = recentActivity
-            let previousConnectionsSnapshot = previousConnections
-            let socketUpdate = await Task.detached {
-                DashboardSamplingPipeline.prepareSocketUIUpdate(
-                    connections: sockets,
-                    previousFingerprint: nil,
-                    previousConnections: previousConnectionsSnapshot,
-                    recentActivity: activitySnapshot,
-                    force: true
-                )
-            }.value
-            if let socketUpdate {
-                applySocketUIUpdate(socketUpdate, source: "collect-snapshot")
-            }
-            lastSocketSampleAt = Date()
-            applyNetworkSample(baseSnapshot.metrics.network)
-            let collectedSnapshot = baseSnapshot.withNetworkActivity(
-                Array(recentActivity.prefix(NetworkSamplingLimits.maxActivityEvents))
-            )
-            applyCollectedSnapshot(collectedSnapshot)
-            do {
-                try await Task.detached {
-                    try DashboardCacheLocations.writeSnapshot(collectedSnapshot)
-                }.value
-                DashboardCollectDiagnostics.log("collect: cache write ok")
-                postStatus("Collected a fresh policy scan and live snapshot.")
-            } catch {
-                DashboardCollectDiagnostics.log("collect: cache write failed: \(error)")
-                postStatus(
-                    "Snapshot collected but could not save to cache: \(error.localizedDescription)"
-                )
-            }
-        } catch {
-            DashboardCollectDiagnostics.log("collect failed: \(error)")
-            postStatus("Collection failed: \(error.localizedDescription)")
-        }
-    }
-
-    private func applyCollectedSnapshot(_ collectedSnapshot: InsightSnapshot) {
-        snapshot = collectedSnapshot
-        SecurityUIUpdate.afterCurrentEvent {
-            snapshot = collectedSnapshot
-        }
+        model.startCollect()
     }
 
     private func startMonitoring() {
         guard security.isUnlocked else { return }
         isMonitoring = true
-        if snapshot == nil {
-            collectSnapshot()
+        if model.snapshot == nil, snapshot == nil {
+            model.startCollect()
         }
 
         backgroundWork.start(
@@ -619,7 +523,7 @@ struct DashboardView: @preconcurrency View {
             onLiveNetworkRefresh: { await refreshLiveNetworkAsync() },
             onSocketRefresh: { await refreshSocketTableAsync() },
             onTelemetryRefresh: { await refreshTelemetryAsync() },
-            onSnapshotCollect: { await collectSnapshotAsync() }
+            onSnapshotCollect: { await model.collectSnapshotAsync() }
         )
     }
 
