@@ -3,6 +3,9 @@ set -eu
 
 ADWAITA_PKG="Apps/ubuntu/SystemInsightsAdwaita"
 
+# Avoid stale SPM artifacts when Flatpak reuses the build directory.
+rm -rf "$ADWAITA_PKG/.build" .build
+
 swift build --package-path "$ADWAITA_PKG" -c debug --product system-insights-ui --static-swift-stdlib
 
 UI_BIN=$(find "$ADWAITA_PKG/.build" -name system-insights-ui -type f -perm -111 2>/dev/null | head -n1)
