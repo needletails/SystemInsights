@@ -55,21 +55,24 @@ struct DashboardView: @preconcurrency View {
 
     var view: Body {
         OperationsRoot {
-            VStack {
+            Box {
                 DashboardLaunchTrigger(onReady: performLaunchBootstrap)
-                switch screen {
-                case .unlock:
-                    unlockScreen
-                case .passwordSetup:
-                    passwordSetupScreen
-                case .main:
-                    dashboardScreen
-                }
-                .hexpand()
-                .vexpand()
+                screenContent
             }
             .hexpand()
             .vexpand()
+        }
+    }
+
+    @ViewBuilder
+    private var screenContent: Body {
+        switch screen {
+        case .unlock:
+            unlockScreen
+        case .passwordSetup:
+            passwordSetupScreen
+        case .main:
+            dashboardScreen
         }
     }
 
