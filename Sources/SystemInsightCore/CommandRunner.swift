@@ -44,9 +44,11 @@ enum CommandRunner {
         )
         let resolvedExecutable = invocation.executable
         let resolvedArguments = invocation.arguments
+        let resolvedTimeout = LinuxSandboxAdaptation.isFlatpak ? min(timeout, 4) : timeout
         #else
         let resolvedExecutable = executable
         let resolvedArguments = arguments
+        let resolvedTimeout = timeout
         #endif
 
         guard FileManager.default.isExecutableFile(atPath: resolvedExecutable) else {
@@ -78,7 +80,7 @@ enum CommandRunner {
             return nil
         }
 
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(resolvedTimeout)
         while process.isRunning && Date() < deadline {
             Thread.sleep(forTimeInterval: 0.05)
         }
@@ -198,6 +200,21 @@ enum LinuxSandboxAdaptation {
         return executable
         #else
         return executable
+        #endif
+    }
+
+    /// First candidate path that exists and is executable (host path under Flatpak when available).
+    static func firstExecutable(_ candidates: [String]) -> String? {
+        #if os(Linux)
+        for candidate in candidates {
+            let resolved = resolveExecutable(candidate)
+            if FileManager.default.isExecutableFile(atPath: resolved) {
+                return resolved
+            }
+        }
+        return nil
+        #else
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
         #endif
     }
 

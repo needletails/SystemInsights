@@ -184,8 +184,9 @@ public struct SystemMetricCollector: MetricCollecting {
         }
         return Self.parseMacOSVisibleTCPConnections(output.stdout)
         #elseif os(Linux)
-        let executable = ["/usr/sbin/ss", "/usr/bin/ss", "/bin/ss"]
-            .first { FileManager.default.isExecutableFile(atPath: $0) }
+        let executable = LinuxSandboxAdaptation.firstExecutable([
+            "/usr/sbin/ss", "/usr/bin/ss", "/bin/ss"
+        ])
         guard let executable,
               let output = CommandRunner.run(
                 executable,
@@ -211,8 +212,9 @@ public struct SystemMetricCollector: MetricCollecting {
         }
         return Self.parseMacOSVisibleSockets(output.stdout)
         #elseif os(Linux)
-        let executable = ["/usr/sbin/ss", "/usr/bin/ss", "/bin/ss"]
-            .first { FileManager.default.isExecutableFile(atPath: $0) }
+        let executable = LinuxSandboxAdaptation.firstExecutable([
+            "/usr/sbin/ss", "/usr/bin/ss", "/bin/ss"
+        ])
         guard let executable else { return [] }
         let tcpOutput = CommandRunner.run(
             executable,
